@@ -1,0 +1,3 @@
+Place exported Grafana dashboard JSON files here once you've designed them
+against real production telemetry. See ../README.md (Phase 2) for guidance
+on what to build first and how to export dashboards-as-code.
