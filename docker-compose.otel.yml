@@ -1,0 +1,17 @@
+# Runs only the OpenTelemetry Collector. Pulse runs separately (npm run dev).
+# Usage: npm run otel:collector
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4318:4318"
+    env_file:
+      - .env
+    environment:
+      PULSE_OTLP_ENDPOINT: ${PULSE_OTLP_ENDPOINT:-http://host.docker.internal:3000/api/v1/ingest/otlp}
+    volumes:
+      - ./config/otel-collector.docker.yaml:/etc/otelcol/config.yaml:ro
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

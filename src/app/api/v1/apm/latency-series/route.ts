@@ -1,5 +1,7 @@
 import { queryAll } from "@/db/client";
+import { appendScopeSql, parseScopeFilters } from "@/lib/scope-filters";
 import { percentilesFromValues } from "@/lib/stats";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
@@ -15,12 +17,18 @@ function defaultBucketMs(windowMs: number): number {
 }
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const now = Date.now();
   const { searchParams } = new URL(req.url);
   const service = searchParams.get("service");
   if (!service) {
     return NextResponse.json({ error: "service is required" }, { status: 400 });
   }
+
+  const scopeParsed = parseScopeFilters(searchParams);
+  if (!scopeParsed.ok) return scopeParsed.response;
+  const { filters: scope } = scopeParsed;
+  const { sql: scopeSql, params: scopeParams } = appendScopeSql(scope);
 
   const requested = Number(searchParams.get("windowMs"));
   const windowMs = Number.isFinite(requested)
@@ -38,12 +46,12 @@ export async function GET(req: Request) {
     `
     SELECT start_ts AS startTs, duration_ms AS durationMs
     FROM trace_spans
-    WHERE service = ?
+    WHERE tenant_id = ? AND service = ?
       AND start_ts >= ? AND start_ts <= ?
-      AND (parent_span_id IS NULL OR parent_span_id = '')
+      AND (parent_span_id IS NULL OR parent_span_id = '')${scopeSql}
     LIMIT ?
   `,
-    [service, since, now, MAX_SPANS],
+    [tenantId, service, since, now, ...scopeParams, MAX_SPANS],
   );
 
   const buckets = new Map<number, number[]>();
@@ -76,6 +84,7 @@ export async function GET(req: Request) {
     windowMs,
     bucketMs,
     service,
+    scope,
     series,
     truncated: rows.length >= MAX_SPANS,
   });

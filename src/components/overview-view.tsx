@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import {
+  pulseChartGridStroke,
+  pulseChartSeries,
+  pulseChartTooltipStyle,
+} from "@/lib/chart-theme";
+import {
   Area,
   AreaChart,
   CartesianGrid,
@@ -49,7 +54,7 @@ function MiniSeries({
   gradientId: string;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-slate-950/30 p-4">
+    <div className="pulse-card-soft p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-xs font-medium text-zinc-300">{title}</div>
@@ -70,16 +75,11 @@ function MiniSeries({
                   <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+              <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} />
               <XAxis dataKey="label" hide />
               <YAxis hide domain={["auto", "auto"]} />
               <Tooltip
-                contentStyle={{
-                  background: "#18181b",
-                  border: "1px solid #3f3f46",
-                  borderRadius: 8,
-                  fontSize: 11,
-                }}
+                contentStyle={pulseChartTooltipStyle}
               />
               <Area
                 type="monotone"
@@ -237,18 +237,18 @@ export function OverviewView() {
 
   return (
     <div className="flex flex-1 flex-col gap-8 px-4 py-8 sm:px-8">
-      <div className="flex flex-col gap-4 border-b border-white/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <div className="pulse-page-head border-white/[0.06]">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">
+          <h1 className="pulse-h1 text-2xl sm:text-[1.65rem]">
             Overview
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-400">
+          <p className="pulse-lead mt-1 max-w-2xl">
             Fleet health, ingest volume, and golden signals for your first
             service. Wire more ingestors to grow these cards automatically.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300">
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-zinc-300 shadow-inner shadow-slate-950/25">
             <input
               type="checkbox"
               checked={live}
@@ -260,7 +260,7 @@ export function OverviewView() {
           <button
             type="button"
             onClick={() => void load("full")}
-            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-100 transition hover:bg-white/10"
+            className="pulse-btn-secondary text-sm"
           >
             Refresh
           </button>
@@ -268,7 +268,7 @@ export function OverviewView() {
             type="button"
             onClick={() => void seedDemo()}
             disabled={loading}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:opacity-50"
+            className="pulse-btn-primary text-sm disabled:opacity-50"
           >
             Load demo data
           </button>
@@ -283,14 +283,11 @@ export function OverviewView() {
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map((k) => (
-          <div
-            key={k.label}
-            className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 shadow-lg shadow-slate-950/25"
-          >
+          <div key={k.label} className="pulse-card p-4">
             <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
               {k.label}
             </div>
-            <div className="mt-2 text-2xl font-semibold tabular-nums text-zinc-50">
+            <div className="mt-2 text-2xl font-semibold tabular-nums text-white">
               {loading && !data ? "—" : k.value}
             </div>
             <div className="mt-1 text-[11px] text-zinc-500">{k.hint}</div>
@@ -304,22 +301,22 @@ export function OverviewView() {
             title="Latency (avg)"
             subtitle="http.server.request_duration_ms · 1h"
             data={seriesA}
-            color="#a5b4fc"
+            color={pulseChartSeries.violetSoft}
             gradientId="mini-latency"
           />
           <MiniSeries
             title="Throughput"
             subtitle="http.server.requests · 1h"
             data={seriesB}
-            color="#34d399"
+            color={pulseChartSeries.emerald}
             gradientId="mini-rpm"
           />
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5 shadow-lg shadow-slate-950/25">
+        <div className="pulse-card p-5">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-zinc-100">
+              <h2 className="text-sm font-semibold text-white">
                 Service health
               </h2>
               <p className="mt-1 text-[11px] text-zinc-500">
@@ -339,14 +336,14 @@ export function OverviewView() {
               data.services.map((s) => (
                 <li
                   key={s.service}
-                  className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-950/25 px-3 py-2.5"
+                  className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5"
                 >
                   <span
                     className={`inline-flex size-2.5 shrink-0 rounded-full ${healthDot(s.health)}`}
                     title={s.health}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-zinc-100">
+                    <div className="truncate text-sm font-medium text-white">
                       {s.service}
                     </div>
                     <div className="text-[10px] text-zinc-500">
@@ -369,10 +366,10 @@ export function OverviewView() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
+      <section className="pulse-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-100">
+            <h2 className="text-sm font-semibold text-white">
               Dependencies (1h)
             </h2>
             <p className="mt-1 text-xs text-zinc-500">
@@ -396,7 +393,7 @@ export function OverviewView() {
             {depEdges.map((e) => (
               <li
                 key={`${e.source}-${e.target}`}
-                className="flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-slate-950/25 px-3 py-2 text-xs"
+                className="flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs"
               >
                 <span className="font-medium text-indigo-200">{e.source}</span>
                 <span className="text-zinc-600">→</span>
@@ -410,15 +407,17 @@ export function OverviewView() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
-        <h2 className="text-sm font-semibold text-zinc-100">Quick ingest</h2>
+      <section className="pulse-card p-5">
+        <h2 className="text-sm font-semibold text-white">Quick ingest</h2>
         <p className="mt-2 text-xs text-zinc-500">
-          POST to{" "}
+          POST JSON to{" "}
           <code className="text-indigo-300">/api/v1/ingest/metrics</code>,{" "}
           <code className="text-indigo-300">/api/v1/ingest/logs</code>, and{" "}
-          <code className="text-indigo-300">/api/v1/ingest/traces</code> from any
-          agent or demo script. Rules in Alerts compare rolling averages to your
-          thresholds.
+          <code className="text-indigo-300">/api/v1/ingest/traces</code>, or send
+          OTLP/HTTP JSON (gzip supported) to{" "}
+          <code className="text-indigo-300">/api/v1/ingest/otlp/v1/*</code> for
+          OpenTelemetry Collector agents. Rules in Alerts compare rolling
+          averages to your thresholds.
         </p>
       </section>
     </div>

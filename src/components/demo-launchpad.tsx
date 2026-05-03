@@ -44,7 +44,7 @@ export function DemoLaunchpad({
   }, []);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-950/40 via-slate-950/80 to-slate-950/90 p-5 shadow-xl shadow-indigo-950/20">
+    <section className="pulse-demo-launchpad overflow-hidden rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-950/40 via-slate-950/80 to-slate-950/90 p-5 shadow-xl shadow-indigo-950/20">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-xl space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-300/90">

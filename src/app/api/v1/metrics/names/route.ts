@@ -1,7 +1,9 @@
 import { queryAll } from "@/db/client";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { searchParams } = new URL(req.url);
   const service = searchParams.get("service");
 
@@ -12,10 +14,10 @@ export async function GET(req: Request) {
   const rows = await queryAll<{ name: string }>(
     `
     SELECT DISTINCT name FROM metric_points
-    WHERE service = ?
+    WHERE tenant_id = ? AND service = ?
     ORDER BY name ASC
   `,
-    [service],
+    [tenantId, service],
   );
   const names = rows.map((r) => r.name);
 

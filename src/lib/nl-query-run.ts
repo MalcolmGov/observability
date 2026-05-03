@@ -113,7 +113,7 @@ async function normalizeMetricsPlan(
     throw new Error("No services in store — ingest telemetry first.");
   }
 
-  const names = await metricNamesForService(service);
+  const names = await metricNamesForService(service, ctx.tenantId);
   const picked = pickNearestMetricName(plan.metricName, names);
   if (!picked) {
     throw new Error(`No metrics found for service "${service}".`);
@@ -206,9 +206,10 @@ export async function runNlQueryPlanner(options: {
   prompt: string;
   pageHint?: "logs" | "metrics" | "traces";
   now?: number;
+  tenantId: string;
 }): Promise<NlQueryApiResponse> {
   const now = options.now ?? Date.now();
-  const ctx = await loadNlQueryContext();
+  const ctx = await loadNlQueryContext(options.tenantId);
 
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {

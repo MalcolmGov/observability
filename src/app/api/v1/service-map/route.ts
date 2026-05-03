@@ -1,7 +1,9 @@
 import { queryAll } from "@/db/client";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { searchParams } = new URL(req.url);
   const sinceMs = Number(searchParams.get("sinceMs"));
   const since =
@@ -13,12 +15,12 @@ export async function GET(req: Request) {
     `
       SELECT service AS source, peer_service AS target, COUNT(*) AS weight
       FROM trace_spans
-      WHERE start_ts >= ?
+      WHERE tenant_id = ? AND start_ts >= ?
         AND peer_service IS NOT NULL
         AND TRIM(peer_service) != ''
       GROUP BY service, peer_service
     `,
-    [since],
+    [tenantId, since],
   );
 
   const crossEdges = await queryAll<{ source: string; target: string; weight: number }>(
@@ -28,14 +30,14 @@ export async function GET(req: Request) {
         c.service AS target,
         COUNT(*) AS weight
       FROM trace_spans c
-      JOIN trace_spans p ON p.span_id = c.parent_span_id
-      WHERE c.start_ts >= ?
+      JOIN trace_spans p ON p.tenant_id = c.tenant_id AND p.span_id = c.parent_span_id
+      WHERE c.tenant_id = ? AND c.start_ts >= ?
         AND p.service IS NOT NULL
         AND c.service IS NOT NULL
         AND p.service != c.service
       GROUP BY p.service, c.service
     `,
-    [since],
+    [tenantId, since],
   );
 
   const merged = new Map<

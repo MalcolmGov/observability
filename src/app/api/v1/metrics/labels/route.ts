@@ -1,8 +1,10 @@
 import { queryAll } from "@/db/client";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 /** Sample recent points and return union of label keys + example values. */
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { searchParams } = new URL(req.url);
   const service = searchParams.get("service");
   const name = searchParams.get("name");
@@ -19,11 +21,11 @@ export async function GET(req: Request) {
     `
       SELECT labels_json AS labelsJson
       FROM metric_points
-      WHERE service = ? AND name = ?
+      WHERE tenant_id = ? AND service = ? AND name = ?
       ORDER BY ts DESC
       LIMIT ?
     `,
-    [service, name, sample],
+    [tenantId, service, name, sample],
   );
 
   const keyValues = new Map<string, Set<string>>();

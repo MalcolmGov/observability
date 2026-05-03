@@ -2,8 +2,16 @@
 
 import { format } from "date-fns";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import {
+  pulseChartAxisTickDense,
+  pulseChartGridStroke,
+  pulseChartLegendWrapperStyle,
+  pulseChartSeries,
+  pulseChartTooltipStyle,
+} from "@/lib/chart-theme";
 import {
   CartesianGrid,
   Legend,
@@ -63,6 +71,28 @@ function fmtPct(rate: number): string {
 }
 
 export function ServicesView() {
+  const searchParams = useSearchParams();
+  const scopeQs = useMemo(() => {
+    const p = searchParams.get("product")?.trim();
+    const m = searchParams.get("market")?.trim();
+    const e =
+      searchParams.get("environment")?.trim() ??
+      searchParams.get("env")?.trim();
+    const q = new URLSearchParams();
+    if (p) q.set("product", p);
+    if (m) q.set("market", m);
+    if (e) q.set("environment", e);
+    const s = q.toString();
+    return s ? `&${s}` : "";
+  }, [searchParams]);
+
+  const scopeProduct = searchParams.get("product")?.trim() ?? "";
+  const scopeMarket = searchParams.get("market")?.trim() ?? "";
+  const scopeEnv =
+    searchParams.get("environment")?.trim() ??
+    searchParams.get("env")?.trim() ??
+    "";
+
   const [rangeMs, setRangeMs] = useState(RANGE_PRESETS[1].ms);
   const [rows, setRows] = useState<ApmServiceRow[]>([]);
   const [focusService, setFocusService] = useState<string | null>(null);
@@ -80,7 +110,9 @@ export function ServicesView() {
       setLoading(true);
     }
     try {
-      const res = await fetch(`/api/v1/apm/services?windowMs=${rangeMs}`);
+      const res = await fetch(
+        `/api/v1/apm/services?windowMs=${rangeMs}${scopeQs}`,
+      );
       if (!res.ok) throw new Error("APM request failed");
       const json = (await res.json()) as { services: ApmServiceRow[] };
       setRows(json.services);
@@ -89,7 +121,7 @@ export function ServicesView() {
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [rangeMs]);
+  }, [rangeMs, scopeQs]);
 
   const loadServiceDetail = useCallback(
     async (mode: "full" | "poll" = "full") => {
@@ -103,10 +135,10 @@ export function ServicesView() {
       try {
         const [opRes, latRes] = await Promise.all([
           fetch(
-            `/api/v1/apm/operations?service=${encodeURIComponent(focusService)}&windowMs=${rangeMs}`,
+            `/api/v1/apm/operations?service=${encodeURIComponent(focusService)}&windowMs=${rangeMs}${scopeQs}`,
           ),
           fetch(
-            `/api/v1/apm/latency-series?service=${encodeURIComponent(focusService)}&windowMs=${rangeMs}`,
+            `/api/v1/apm/latency-series?service=${encodeURIComponent(focusService)}&windowMs=${rangeMs}${scopeQs}`,
           ),
         ]);
         if (opRes.ok) {
@@ -139,7 +171,7 @@ export function ServicesView() {
         if (!quiet) setDetailLoading(false);
       }
     },
-    [focusService, rangeMs],
+    [focusService, rangeMs, scopeQs],
   );
 
   useEffect(() => {
@@ -198,6 +230,34 @@ export function ServicesView() {
             (with Live) time-synced endpoint + latency panels—similar to Datadog
             APM and Dynatrace service screens.
           </p>
+          {(scopeProduct || scopeMarket || scopeEnv) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                Scoped
+              </span>
+              {scopeProduct ? (
+                <span className="rounded-md bg-violet-500/15 px-2 py-0.5 text-xs text-violet-200 ring-1 ring-violet-500/25">
+                  product={scopeProduct}
+                </span>
+              ) : null}
+              {scopeMarket ? (
+                <span className="rounded-md bg-cyan-500/12 px-2 py-0.5 text-xs text-cyan-100 ring-1 ring-cyan-500/25">
+                  market={scopeMarket}
+                </span>
+              ) : null}
+              {scopeEnv ? (
+                <span className="rounded-md bg-zinc-500/15 px-2 py-0.5 text-xs text-zinc-300 ring-1 ring-white/10">
+                  env={scopeEnv}
+                </span>
+              ) : null}
+              <Link
+                href="/services"
+                className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+              >
+                Clear filters
+              </Link>
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-white/10 bg-slate-950/35 p-0.5">
@@ -438,37 +498,34 @@ export function ServicesView() {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={latencyPts}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} />
                     <XAxis
                       dataKey="label"
-                      tick={{ fill: "#71717a", fontSize: 9 }}
+                      tick={pulseChartAxisTickDense}
                       interval="preserveStartEnd"
                     />
                     <YAxis
-                      tick={{ fill: "#71717a", fontSize: 9 }}
+                      tick={pulseChartAxisTickDense}
                       width={32}
                       label={{
                         value: "ms",
                         angle: -90,
                         position: "insideLeft",
-                        fill: "#71717a",
+                        fill: pulseChartAxisTickDense.fill,
                         fontSize: 9,
                       }}
                     />
                     <Tooltip
-                      contentStyle={{
-                        background: "#18181b",
-                        border: "1px solid #3f3f46",
-                        borderRadius: 8,
-                        fontSize: 11,
-                      }}
+                      contentStyle={pulseChartTooltipStyle}
                     />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    <Legend
+                      wrapperStyle={{ ...pulseChartLegendWrapperStyle, fontSize: 10 }}
+                    />
                     <Line
                       type="monotone"
                       dataKey="p50"
                       name="p50"
-                      stroke="#a5b4fc"
+                      stroke={pulseChartSeries.violetSoft}
                       dot={false}
                       strokeWidth={2}
                     />
@@ -476,7 +533,7 @@ export function ServicesView() {
                       type="monotone"
                       dataKey="p95"
                       name="p95"
-                      stroke="#fbbf24"
+                      stroke={pulseChartSeries.amberLine}
                       dot={false}
                       strokeWidth={2}
                     />
@@ -484,7 +541,7 @@ export function ServicesView() {
                       type="monotone"
                       dataKey="p99"
                       name="p99"
-                      stroke="#f87171"
+                      stroke={pulseChartSeries.roseLine}
                       dot={false}
                       strokeWidth={2}
                     />

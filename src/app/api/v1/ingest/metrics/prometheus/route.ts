@@ -1,6 +1,10 @@
 import { insertMetricPoints } from "@/db/client";
+import { ingestRejectOversizedBuffer } from "@/lib/ingest-body-limit";
+import { ingestPreReadGuards } from "@/lib/ingest-request-guards";
 import { requireIngestAuth } from "@/lib/ingest-auth";
 import { parsePrometheusText } from "@/lib/prometheus-text";
+import { maybeRunTelemetryRetentionAfterWrite } from "@/lib/telemetry-retention-inline";
+import { resolveIngestTenantId } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 /**
@@ -11,6 +15,13 @@ export async function POST(req: Request) {
   const unauthorized = requireIngestAuth(req);
   if (unauthorized) return unauthorized;
 
+  const gated = ingestPreReadGuards(req, "prometheus");
+  if (gated) return gated;
+
+  const tenantGate = resolveIngestTenantId(req);
+  if (tenantGate instanceof NextResponse) return tenantGate;
+  const tenantId = tenantGate;
+
   const { searchParams } = new URL(req.url);
   const defaultSvc = searchParams.get("service")?.trim();
   const defaultLabels: Record<string, string> = defaultSvc
@@ -18,6 +29,8 @@ export async function POST(req: Request) {
     : {};
 
   const text = await req.text();
+  const tooBig = ingestRejectOversizedBuffer(Buffer.from(text, "utf8"), "prometheus");
+  if (tooBig) return tooBig;
   if (!text.trim()) {
     return NextResponse.json({ accepted: 0 });
   }
@@ -28,6 +41,7 @@ export async function POST(req: Request) {
   }
 
   const rows = parsed.map((m) => ({
+    tenantId,
     ts: m.timestamp,
     name: m.name,
     value: m.value,
@@ -36,6 +50,7 @@ export async function POST(req: Request) {
   }));
 
   await insertMetricPoints(rows);
+  await maybeRunTelemetryRetentionAfterWrite();
 
   return NextResponse.json({ accepted: rows.length });
 }

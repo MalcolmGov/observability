@@ -4,6 +4,8 @@ import { format } from "date-fns";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import { TraceCopilotPanel } from "@/components/trace-copilot-panel";
+import { computeCriticalPathSpanIds } from "@/lib/trace-critical-path";
 
 type Span = {
   traceId: string;
@@ -18,6 +20,8 @@ type Span = {
   status: string;
   peerService: string | null;
   attributes: Record<string, unknown>;
+  events: unknown[];
+  links: unknown[];
 };
 
 function spanDepth(s: Span, byId: Map<string, Span>): number {
@@ -43,6 +47,10 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [attrQuery, setAttrQuery] = useState("");
+  const [layoutMode, setLayoutMode] = useState<"waterfall" | "flame">(
+    "waterfall",
+  );
 
   const load = useCallback(async (mode: "full" | "poll" = "full") => {
     const quiet = mode === "poll";
@@ -72,25 +80,64 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
 
   useLiveRefresh(live, 5000, () => void load("poll"));
 
+  const criticalIds = useMemo(() => {
+    if (!data?.spans.length) return new Set<string>();
+    return computeCriticalPathSpanIds(
+      data.spans.map((s) => ({
+        spanId: s.spanId,
+        parentSpanId: s.parentSpanId,
+        durationMs: s.durationMs,
+      })),
+    );
+  }, [data]);
+
   const rows = useMemo(() => {
     if (!data?.spans.length) return [];
-    const byId = new Map(data.spans.map((s) => [s.spanId, s]));
+    const fullById = new Map(data.spans.map((s) => [s.spanId, s]));
+    const q = attrQuery.trim().toLowerCase();
+    const spans =
+      q === ""
+        ? data.spans
+        : data.spans.filter((s) => {
+            const blob =
+              `${s.name} ${s.service} ${JSON.stringify(s.attributes)}`.toLowerCase();
+            return blob.includes(q);
+          });
+
     const t0 = data.startTs;
     const range = Math.max(1, data.endTs - t0);
 
-    return data.spans.map((s) => {
-      const depth = spanDepth(s, byId);
+    let mapped = spans.map((s) => {
+      const depth = spanDepth(s, fullById);
       const left = ((s.startTs - t0) / range) * 100;
       const width = (Math.max(1, s.durationMs) / range) * 100;
       return { s, depth, left, width };
     });
-  }, [data]);
+
+    if (layoutMode === "flame") {
+      mapped = [...mapped].sort((a, b) => {
+        if (a.depth !== b.depth) return a.depth - b.depth;
+        return b.s.durationMs - a.s.durationMs;
+      });
+    }
+
+    return mapped;
+  }, [attrQuery, data, layoutMode]);
 
   const rootSpan = useMemo(() => {
     if (!data?.spans.length) return null;
     return (
       data.spans.find((s) => !s.parentSpanId || s.parentSpanId === "") ??
       data.spans.reduce((a, b) => (a.startTs <= b.startTs ? a : b))
+    );
+  }, [data]);
+
+  const logsWindowMs = useMemo(() => {
+    if (!data) return 24 * 60 * 60 * 1000;
+    const pad = 180_000;
+    return Math.min(
+      24 * 60 * 60 * 1000,
+      Math.max(15 * 60 * 1000, data.durationMs + pad),
     );
   }, [data]);
 
@@ -135,18 +182,22 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
           <p className="mt-2 text-sm text-zinc-400">
             {format(new Date(data.startTs), "PPpp")} ·{" "}
             <span className="tabular-nums">{data.durationMs} ms</span> ·{" "}
-            {data.spans.length} spans
+            {data.spans.length} spans · critical path{" "}
+            <span className="tabular-nums text-amber-200/90">
+              {criticalIds.size}
+            </span>{" "}
+            spans
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={`/logs?traceId=${encodeURIComponent(traceId)}&service=${encodeURIComponent(rootSpan?.service ?? "")}`}
+            href={`/logs?traceId=${encodeURIComponent(traceId)}&service=${encodeURIComponent(rootSpan?.service ?? "")}&windowMs=${String(logsWindowMs)}`}
             className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-white/10"
           >
             Logs for trace
           </Link>
           <Link
-            href={`/map`}
+            href={`/map?sinceMs=${60 * 60 * 1000}`}
             className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
           >
             Service map
@@ -170,10 +221,45 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
         </div>
       </div>
 
+      <TraceCopilotPanel traceId={traceId} />
+
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-white/[0.06] bg-slate-950/35 px-4 py-3">
+        <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-[10px] text-zinc-500">
+          Attribute / name search
+          <input
+            value={attrQuery}
+            onChange={(e) => setAttrQuery(e.target.value)}
+            placeholder="db.statement, http.route, …"
+            className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600"
+          />
+        </label>
+        <div className="pulse-segment">
+          <button
+            type="button"
+            className={`pulse-segment-btn ${layoutMode === "waterfall" ? "pulse-segment-btn-active" : ""}`}
+            onClick={() => setLayoutMode("waterfall")}
+          >
+            Waterfall
+          </button>
+          <button
+            type="button"
+            className={`pulse-segment-btn ${layoutMode === "flame" ? "pulse-segment-btn-active" : ""}`}
+            onClick={() => setLayoutMode("flame")}
+          >
+            Flame
+          </button>
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-        <div className="mb-3 flex items-center justify-between text-[10px] uppercase tracking-wide text-zinc-500">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-zinc-500">
           <span>Span</span>
-          <span>Timeline (relative)</span>
+          <span>
+            Timeline · amber ring = critical path ·{" "}
+            {layoutMode === "flame"
+              ? "flame sort (depth, duration)"
+              : "chronological"}
+          </span>
         </div>
         <div className="flex flex-col gap-2">
           {rows.map(({ s, depth, left, width }) => (
@@ -201,6 +287,25 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
                 <div className="tabular-nums text-zinc-600">
                   {s.durationMs.toFixed(1)} ms
                 </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <Link
+                    href={`/logs?traceId=${encodeURIComponent(traceId)}&service=${encodeURIComponent(s.service)}&windowMs=${String(logsWindowMs)}`}
+                    className="text-[10px] font-medium text-indigo-400 hover:text-indigo-300"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Logs
+                  </Link>
+                  {Array.isArray(s.events) && s.events.length > 0 ? (
+                    <span className="text-[10px] text-zinc-600">
+                      {s.events.length} events
+                    </span>
+                  ) : null}
+                  {Array.isArray(s.links) && s.links.length > 0 ? (
+                    <span className="text-[10px] text-zinc-600">
+                      {s.links.length} links
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div className="relative min-h-9 min-w-0 flex-1 rounded-lg bg-slate-950/45">
                 <div
@@ -210,7 +315,7 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
                       : s.kind === "client"
                         ? "bg-amber-400/70"
                         : "bg-indigo-400/80"
-                  }`}
+                  } ${criticalIds.has(s.spanId) ? "ring-2 ring-amber-300/95 ring-offset-2 ring-offset-slate-950" : ""}`}
                   style={{
                     left: `${left}%`,
                     width: `${Math.max(width, 0.35)}%`,

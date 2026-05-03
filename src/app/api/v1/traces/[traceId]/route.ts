@@ -1,9 +1,11 @@
 import { queryAll } from "@/db/client";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 type Params = { params: Promise<{ traceId: string }> };
 
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: Request, { params }: Params) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { traceId } = await params;
   if (!traceId) {
     return NextResponse.json({ error: "traceId required" }, { status: 400 });
@@ -22,6 +24,8 @@ export async function GET(_req: Request, { params }: Params) {
     status: string;
     peerService: string | null;
     attributesJson: string;
+    eventsJson: string;
+    linksJson: string;
   }>(
     `
       SELECT
@@ -36,16 +40,27 @@ export async function GET(_req: Request, { params }: Params) {
         kind,
         status,
         peer_service AS peerService,
-        attributes_json AS attributesJson
+        attributes_json AS attributesJson,
+        events_json AS eventsJson,
+        links_json AS linksJson
       FROM trace_spans
-      WHERE trace_id = ?
+      WHERE tenant_id = ? AND trace_id = ?
       ORDER BY start_ts ASC, span_id ASC
     `,
-    [traceId],
+    [tenantId, traceId],
   );
 
   if (!rows.length) {
     return NextResponse.json({ error: "Trace not found" }, { status: 404 });
+  }
+
+  function parseJsonArray(raw: string): unknown[] {
+    try {
+      const v = JSON.parse(raw || "[]") as unknown;
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
   }
 
   const spans = rows.map((r) => ({
@@ -64,6 +79,8 @@ export async function GET(_req: Request, { params }: Params) {
       string,
       unknown
     >,
+    events: parseJsonArray(r.eventsJson),
+    links: parseJsonArray(r.linksJson),
   }));
 
   const start = Math.min(...spans.map((s) => s.startTs));

@@ -1,0 +1,87 @@
+================================================================================
+  PULSE — SEND TELEMETRY (simple steps)
+================================================================================
+
+You need two things running at the same time:
+  (A) The Pulse website on your computer
+  (B) A small "collector" program inside Docker that forwards data to Pulse
+
+--------------------------------------------------------------------------------
+WHAT TO INSTALL FIRST (one time)
+--------------------------------------------------------------------------------
+
+1) Node.js — if you already run Pulse with "npm run dev", you have this.
+
+2) Docker Desktop — free app from https://www.docker.com/products/docker-desktop/
+   Install it and open it once so it stays running (whale icon in the menu bar).
+
+
+--------------------------------------------------------------------------------
+FIRST-TIME SETUP (one time)
+--------------------------------------------------------------------------------
+
+1) Open Terminal (Mac) or PowerShell (Windows).
+
+2) Go to the "observability" folder inside this project (the same folder that
+   contains package.json).
+
+3) Copy the example settings file:
+      Mac / Linux:   cp .env.example .env
+      Windows:       Copy-Item .env.example .env
+
+4) Open the new file ".env" in any text editor.
+
+5) Change this line:
+      PULSE_INGEST_API_KEY=replace-this-with-your-own-secret
+   to use YOUR secret (any long password-like text). Save the file.
+
+   Important: leave PULSE_OTLP_ENDPOINT as-is unless you are on Linux and
+   nothing shows up in Pulse — then ask someone technical or see .env.example.
+
+
+--------------------------------------------------------------------------------
+EVERY TIME YOU WANT TO RECEIVE TELEMETRY
+--------------------------------------------------------------------------------
+
+Terminal window 1 — start Pulse:
+      npm install        (only needed once)
+      npm run dev
+
+   Wait until it says the site is ready (usually http://localhost:3000).
+   Keep this window open.
+
+Terminal window 2 — start the collector:
+      npm run otel:collector
+
+   Keep this window open. The first run may take a minute while Docker
+   downloads the collector image.
+
+Anything that sends OpenTelemetry data to port 4318 on your computer will now
+be forwarded into Pulse (traces, metrics, logs).
+
+
+--------------------------------------------------------------------------------
+HOW TO CHECK THAT IT WORKED
+--------------------------------------------------------------------------------
+
+Open Pulse in the browser. Use "Load demo data" or your normal usage — if your
+apps are configured to send OTLP to localhost:4318, new traces/metrics/logs
+should appear after a short delay.
+
+
+--------------------------------------------------------------------------------
+IF SOMETHING GOES WRONG
+--------------------------------------------------------------------------------
+
+· Docker not running — open Docker Desktop and wait until it says "running".
+
+· "Cannot find .env" — copy .env.example to .env (see above).
+
+· Pulse shows nothing — make sure Terminal 1 (npm run dev) is running AND
+  Terminal 2 (npm run otel:collector) is running, and both were started AFTER
+  you saved your .env file.
+
+· Still stuck — share this file and any red error text from the terminals with
+  someone technical.
+
+================================================================================

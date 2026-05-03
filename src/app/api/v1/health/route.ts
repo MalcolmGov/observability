@@ -5,6 +5,10 @@ import { retentionConfig } from "@/lib/telemetry-retention";
 import { isCronSecretConfigured } from "@/lib/cron-auth";
 import { isIngestAuthConfigured } from "@/lib/ingest-auth";
 import { isNlQueryApiAuthConfigured } from "@/lib/nl-query-auth";
+import {
+  isMultiTenantIngestMode,
+  TELEMETRY_TENANT_HEADER,
+} from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -17,9 +21,24 @@ export async function GET() {
         time: new Date().toISOString(),
         store: "postgres",
         ingestAuthRequired: isIngestAuthConfigured(),
+        otlpHttpJson: {
+          traces: "/api/v1/ingest/otlp/v1/traces",
+          metrics: "/api/v1/ingest/otlp/v1/metrics",
+          logs: "/api/v1/ingest/otlp/v1/logs",
+        },
         naturalLanguageQuery: {
           openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
           restApiAuthRequired: isNlQueryApiAuthConfigured(),
+        },
+        telemetryIsolation: {
+          tenantScopedTelemetry: true,
+          tenantHeader: TELEMETRY_TENANT_HEADER,
+          multiTenantIngestRequired: isMultiTenantIngestMode(),
+          tenantCookie: "pulse_tenant_id",
+        },
+        retentionInline: {
+          enabled: process.env.PULSE_DISABLE_INLINE_RETENTION?.trim() !== "1",
+          intervalMsDefault: 21_600_000,
         },
         retentionPolicyDays: retentionConfig(),
         cronRetention: {
@@ -35,9 +54,24 @@ export async function GET() {
       time: new Date().toISOString(),
       store: "sqlite",
       ingestAuthRequired: isIngestAuthConfigured(),
+      otlpHttpJson: {
+        traces: "/api/v1/ingest/otlp/v1/traces",
+        metrics: "/api/v1/ingest/otlp/v1/metrics",
+        logs: "/api/v1/ingest/otlp/v1/logs",
+      },
       naturalLanguageQuery: {
         openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
         restApiAuthRequired: isNlQueryApiAuthConfigured(),
+      },
+      telemetryIsolation: {
+        tenantScopedTelemetry: true,
+        tenantHeader: TELEMETRY_TENANT_HEADER,
+        multiTenantIngestRequired: isMultiTenantIngestMode(),
+        tenantCookie: "pulse_tenant_id",
+      },
+      retentionInline: {
+        enabled: process.env.PULSE_DISABLE_INLINE_RETENTION?.trim() !== "1",
+        intervalMsDefault: 21_600_000,
       },
       retentionPolicyDays: retentionConfig(),
       cronRetention: {

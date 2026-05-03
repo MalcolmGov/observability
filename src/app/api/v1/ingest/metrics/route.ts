@@ -1,6 +1,10 @@
 import { insertMetricPoints } from "@/db/client";
+import { ingestRejectOversizedBuffer } from "@/lib/ingest-body-limit";
+import { ingestPreReadGuards } from "@/lib/ingest-request-guards";
 import { requireIngestAuth } from "@/lib/ingest-auth";
 import { serviceFromLabels } from "@/lib/service";
+import { resolveIngestTenantId } from "@/lib/telemetry-tenant";
+import { maybeRunTelemetryRetentionAfterWrite } from "@/lib/telemetry-retention-inline";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -19,9 +23,20 @@ export async function POST(req: Request) {
   const unauthorized = requireIngestAuth(req);
   if (unauthorized) return unauthorized;
 
+  const gated = ingestPreReadGuards(req, "json");
+  if (gated) return gated;
+
+  const tenantGate = resolveIngestTenantId(req);
+  if (tenantGate instanceof NextResponse) return tenantGate;
+  const tenantId = tenantGate;
+
+  const raw = Buffer.from(await req.arrayBuffer());
+  const tooBig = ingestRejectOversizedBuffer(raw, "json");
+  if (tooBig) return tooBig;
+
   let json: unknown;
   try {
-    json = await req.json();
+    json = JSON.parse(raw.toString("utf8")) as unknown;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -39,6 +54,7 @@ export async function POST(req: Request) {
     const labels = m.labels ?? {};
     const service = serviceFromLabels(labels);
     return {
+      tenantId,
       ts: m.timestamp ?? now,
       name: m.name,
       value: m.value,
@@ -52,6 +68,7 @@ export async function POST(req: Request) {
   }
 
   await insertMetricPoints(rows);
+  await maybeRunTelemetryRetentionAfterWrite();
 
   return NextResponse.json({ accepted: rows.length });
 }

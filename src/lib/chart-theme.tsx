@@ -1,36 +1,52 @@
 import type { CSSProperties } from "react";
 
-/** Premium dark tooltip surface for Recharts */
+/** Recharts tooltip — colors from CSS variables (dark/light in globals + pulse-light). */
 export const pulseChartTooltipStyle: CSSProperties = {
-  background: "rgba(12, 20, 38, 0.94)",
-  border: "1px solid rgba(255, 255, 255, 0.09)",
+  background: "var(--pulse-chart-tooltip-bg)",
+  border: "1px solid var(--pulse-chart-tooltip-border)",
   borderRadius: 12,
   fontSize: 12,
   padding: "10px 12px",
-  boxShadow:
-    "0 18px 48px -12px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.03) inset",
+  boxShadow: "var(--pulse-chart-tooltip-shadow)",
 };
 
 export const pulseChartTooltipLabelStyle: CSSProperties = {
-  color: "#a1a1aa",
+  color: "var(--pulse-chart-tooltip-label)",
   marginBottom: 4,
 };
 
 export const pulseChartAxisTick = {
-  fill: "#a1a1aa",
+  fill: "var(--pulse-chart-axis-fill)",
+  fontSize: 11,
+};
+
+export const pulseChartAxisTickDense = {
+  fill: "var(--pulse-chart-axis-fill-dense)",
   fontSize: 10,
 };
 
-export const pulseChartGridStroke = "rgba(255,255,255,0.045)";
+/** Legend wrapper — set `color` so HTML legend items inherit in both themes */
+export const pulseChartLegendWrapperStyle: CSSProperties = {
+  fontSize: 11,
+  paddingTop: 8,
+  color: "var(--pulse-chart-legend-text)",
+};
 
+export const pulseChartGridStroke = "var(--pulse-chart-grid-stroke)";
+
+/** Line / area strokes — use in SVG or Recharts `stroke` / `stopColor`. */
 export const pulseChartSeries = {
-  violet: "#a78bfa",
-  violetStroke: "#c4b5fd",
-  cyan: "#22d3ee",
-  amber: "#fcd34d",
-  rose: "#fb7185",
-  emerald: "#34d399",
-  emeraldDeep: "#10b981",
+  violet: "var(--pulse-series-violet)",
+  violetStroke: "var(--pulse-series-violet-stroke)",
+  violetSoft: "var(--pulse-series-violet-soft)",
+  cyan: "var(--pulse-series-cyan)",
+  amber: "var(--pulse-series-amber)",
+  amberLine: "var(--pulse-series-amber-line)",
+  rose: "var(--pulse-series-rose)",
+  roseLine: "var(--pulse-series-rose-line)",
+  emerald: "var(--pulse-series-emerald)",
+  emeraldDeep: "var(--pulse-series-emerald-deep)",
+  indigo: "var(--pulse-series-indigo)",
 } as const;
 
 type DefsProps = { prefix: string };
@@ -40,18 +56,50 @@ export function PulseChartDefs({ prefix }: DefsProps) {
   return (
     <defs>
       <linearGradient id={`${prefix}-area-violet`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#ddd6fe" stopOpacity={0.5} />
-        <stop offset="45%" stopColor="#8b5cf6" stopOpacity={0.18} />
-        <stop offset="100%" stopColor="#6d28d9" stopOpacity={0} />
+        <stop
+          offset="0%"
+          stopColor="var(--pulse-gradient-violet-top)"
+          stopOpacity={0.5}
+        />
+        <stop
+          offset="45%"
+          stopColor="var(--pulse-gradient-violet-mid)"
+          stopOpacity={0.18}
+        />
+        <stop
+          offset="100%"
+          stopColor="var(--pulse-gradient-violet-bottom)"
+          stopOpacity={0}
+        />
       </linearGradient>
       <linearGradient id={`${prefix}-area-cyan`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#67e8f9" stopOpacity={0.45} />
-        <stop offset="50%" stopColor="#22d3ee" stopOpacity={0.12} />
-        <stop offset="100%" stopColor="#0891b2" stopOpacity={0} />
+        <stop
+          offset="0%"
+          stopColor="var(--pulse-gradient-cyan-top)"
+          stopOpacity={0.45}
+        />
+        <stop
+          offset="50%"
+          stopColor="var(--pulse-gradient-cyan-mid)"
+          stopOpacity={0.12}
+        />
+        <stop
+          offset="100%"
+          stopColor="var(--pulse-gradient-cyan-bottom)"
+          stopOpacity={0}
+        />
       </linearGradient>
       <linearGradient id={`${prefix}-bar-rpm`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#6ee7b7" stopOpacity={1} />
-        <stop offset="100%" stopColor="#059669" stopOpacity={0.92} />
+        <stop
+          offset="0%"
+          stopColor="var(--pulse-gradient-bar-top)"
+          stopOpacity={1}
+        />
+        <stop
+          offset="100%"
+          stopColor="var(--pulse-gradient-bar-bottom)"
+          stopOpacity={0.92}
+        />
       </linearGradient>
       <filter id={`${prefix}-glow-violet`} x="-20%" y="-20%" width="140%" height="140%">
         <feGaussianBlur stdDeviation="2" result="blur" />

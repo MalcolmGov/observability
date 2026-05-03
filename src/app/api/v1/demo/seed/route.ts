@@ -7,6 +7,7 @@ import {
   queryGet,
   queryRun,
 } from "@/db/client";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 const DEMO_ALERTS: {
@@ -44,7 +45,7 @@ const DEMO_ALERTS: {
 ];
 
 /** Rich sample data for showroom / evaluation. Disable in production unless ALLOW_DEMO_SEED=1 */
-export async function POST() {
+export async function POST(req: Request) {
   if (
     process.env.NODE_ENV === "production" &&
     process.env.ALLOW_DEMO_SEED !== "1"
@@ -52,17 +53,32 @@ export async function POST() {
     return NextResponse.json({ error: "Not available" }, { status: 403 });
   }
 
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const now = Date.now();
   const dataset = buildDemoDataset(now);
 
-  await insertMetricPoints(dataset.metricRows);
-  await insertTraceSpans(dataset.traceSpans);
-  await insertLogEntries(dataset.logRows);
+  const demoIdentity = {
+    product: "consumer",
+    market: "ZA",
+    environment: "demo",
+    version: "demo-1.0.0" as string | null,
+    instanceId: null as string | null,
+  };
+
+  await insertMetricPoints(
+    dataset.metricRows.map((r) => ({ ...r, ...demoIdentity, tenantId })),
+  );
+  await insertTraceSpans(
+    dataset.traceSpans.map((r) => ({ ...r, ...demoIdentity, tenantId })),
+  );
+  await insertLogEntries(
+    dataset.logRows.map((r) => ({ ...r, ...demoIdentity, tenantId })),
+  );
 
   await queryRun(
-    `INSERT INTO slo_targets (service, target_success, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT (service) DO UPDATE SET
+    `INSERT INTO slo_targets (service, target_success, updated_at, product, market, environment)
+       VALUES (?, ?, ?, 'consumer', 'ZA', 'demo')
+       ON CONFLICT (service, product, market, environment) DO UPDATE SET
          target_success = excluded.target_success,
          updated_at = excluded.updated_at`,
     [DEMO_SERVICES.checkout, 0.995, now],
@@ -75,7 +91,7 @@ export async function POST() {
     );
     if (exists) continue;
     await queryRun(
-      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url) VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         rule.name,
         1,
@@ -86,6 +102,11 @@ export async function POST() {
         rule.windowMinutes,
         null,
         null,
+        null,
+        null,
+        null,
+        null,
+        "prod",
       ],
     );
   }
@@ -100,7 +121,13 @@ export async function POST() {
       logEntries: dataset.logRows.length,
       traceSpans: dataset.traceSpans.length,
     },
-    sloTarget: { service: DEMO_SERVICES.checkout, targetSuccess: 0.995 },
+    sloTarget: {
+      service: DEMO_SERVICES.checkout,
+      product: "consumer",
+      market: "ZA",
+      environment: "demo",
+      targetSuccess: 0.995,
+    },
     alertsEnsured: DEMO_ALERTS.length,
   });
 }

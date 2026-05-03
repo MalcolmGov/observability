@@ -35,6 +35,8 @@ type TraceRow = {
   status: string;
   peerService: string | null;
   attributesJson: string;
+  eventsJson?: string;
+  linksJson?: string;
 };
 
 export type DemoDataset = {
@@ -276,6 +278,16 @@ function buildTraces(now: number): { spans: TraceRow[]; traceIds: DemoSeedTraceI
         "http.route": "/charge",
         "psp.code": "issuer_declined",
       }),
+      eventsJson: JSON.stringify([
+        {
+          name: "exception",
+          attributes: {
+            type: "IssuerTimeout",
+            message: "PSP did not respond within deadline",
+          },
+        },
+      ]),
+      linksJson: "[]",
     },
     {
       traceId: failTraceId,

@@ -1,0 +1,44 @@
+# OpenTelemetry Collector → Pulse (OTLP/HTTP JSON + gzip)
+#
+# Run (example):
+#   export PULSE_INGEST_API_KEY=dev-secret
+#   docker run --rm -p 4318:4318 \
+#     -e PULSE_INGEST_API_KEY \
+#     -v "$(pwd)/config/otel-collector.example.yaml:/etc/otelcol/config.yaml:ro" \
+#     otel/opentelemetry-collector-contrib:latest \
+#     --config /etc/otelcol/config.yaml
+#
+# Agents send OTLP HTTP to localhost:4318. Pulse must be reachable at the endpoint below.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  otlphttp/pulse:
+    endpoint: http://host.docker.internal:3000/api/v1/ingest/otlp
+    compression: gzip
+    tls:
+      insecure: true
+    headers:
+      x-pulse-ingest-key: "${env:PULSE_INGEST_API_KEY}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/pulse]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/pulse]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/pulse]

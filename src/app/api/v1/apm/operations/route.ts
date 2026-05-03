@@ -1,5 +1,7 @@
 import { queryAll } from "@/db/client";
+import { appendScopeSql, parseScopeFilters } from "@/lib/scope-filters";
 import { percentilesFromValues } from "@/lib/stats";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
@@ -7,12 +9,18 @@ const MIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const now = Date.now();
   const { searchParams } = new URL(req.url);
   const service = searchParams.get("service");
   if (!service) {
     return NextResponse.json({ error: "service is required" }, { status: 400 });
   }
+
+  const scopeParsed = parseScopeFilters(searchParams);
+  if (!scopeParsed.ok) return scopeParsed.response;
+  const { filters: scope } = scopeParsed;
+  const { sql: scopeSql, params: scopeParams } = appendScopeSql(scope);
 
   const requested = Number(searchParams.get("windowMs"));
   const windowMs = Number.isFinite(requested)
@@ -34,11 +42,11 @@ export async function GET(req: Request) {
       duration_ms AS durationMs,
       status
     FROM trace_spans
-    WHERE service = ?
+    WHERE tenant_id = ? AND service = ?
       AND start_ts >= ? AND start_ts <= ?
-      AND (parent_span_id IS NULL OR parent_span_id = '')
+      AND (parent_span_id IS NULL OR parent_span_id = '')${scopeSql}
   `,
-    [service, since, now],
+    [tenantId, service, since, now, ...scopeParams],
   );
 
   type Agg = { durations: number[]; errors: number; requests: number };
@@ -77,6 +85,7 @@ export async function GET(req: Request) {
     generatedAtMs: now,
     windowMs,
     service,
+    scope,
     operations,
   });
 }

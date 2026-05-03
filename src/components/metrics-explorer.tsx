@@ -4,13 +4,23 @@ import { format } from "date-fns";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import {
+  pulseChartAxisTick,
+  pulseChartGridStroke,
+  pulseChartLegendWrapperStyle,
+  pulseChartSeries,
+  pulseChartTooltipStyle,
+} from "@/lib/chart-theme";
 import type { NlQueryApiResponse } from "@/lib/nl-query-schema";
 import { NlQueryPanel } from "@/components/nl-query-panel";
+import { SavedViewsToolbar } from "@/components/saved-views-toolbar";
+import { downloadText, rowsToCsv } from "@/lib/export-download";
 import {
   Area,
   AreaChart,
   CartesianGrid,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -54,10 +64,15 @@ export function MetricsExplorer() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("1h");
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [series2, setSeries2] = useState<SeriesPoint[]>([]);
+  const [seriesPrevPrimary, setSeriesPrevPrimary] = useState<SeriesPoint[]>(
+    [],
+  );
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
+  const [comparePreviousPeriod, setComparePreviousPeriod] = useState(false);
   const [labelRows, setLabelRows] = useState<
     { key: string; cardinality: number; examples: string[] }[]
   >([]);
@@ -97,6 +112,7 @@ export function MetricsExplorer() {
     if (!service || !metric) {
       setSeries([]);
       setSeries2([]);
+      setSeriesPrevPrimary([]);
       return;
     }
     const base = {
@@ -121,7 +137,34 @@ export function MetricsExplorer() {
     } else {
       setSeries2([]);
     }
-  }, [compareMetric, metric, range.bucketMs, range.end, range.start, service]);
+
+    if (comparePreviousPeriod) {
+      const span = range.end - range.start;
+      const prevStart = range.start - span;
+      const prevEnd = range.start;
+      const qp = new URLSearchParams({
+        ...base,
+        start: String(prevStart),
+        end: String(prevEnd),
+        name: metric,
+      });
+      const resp = await fetch(`/api/v1/query/metrics?${qp}`);
+      if (resp.ok) {
+        const dp = (await resp.json()) as { series: SeriesPoint[] };
+        setSeriesPrevPrimary(dp.series);
+      } else setSeriesPrevPrimary([]);
+    } else {
+      setSeriesPrevPrimary([]);
+    }
+  }, [
+    compareMetric,
+    comparePreviousPeriod,
+    metric,
+    range.bucketMs,
+    range.end,
+    range.start,
+    service,
+  ]);
 
   const loadLogs = useCallback(async () => {
     if (!service) {
@@ -159,6 +202,8 @@ export function MetricsExplorer() {
     if (m) setMetric(m);
     const r = searchParams.get("range");
     if (r && r in RANGE_MS) setRangeKey(r as RangeKey);
+    const cmp = searchParams.get("compare");
+    if (cmp) setCompareMetric(cmp);
   }, [searchParams]);
 
   const applyNlMetrics = useCallback((plan: NlQueryApiResponse) => {
@@ -167,6 +212,39 @@ export function MetricsExplorer() {
     setMetric(plan.metrics.metricName);
     setRangeKey(plan.metrics.rangeKey);
   }, []);
+
+  const applySavedState = useCallback((state: Record<string, unknown>) => {
+    const svc = state.service;
+    if (typeof svc === "string" && svc) setService(svc);
+    const m = state.metric;
+    if (typeof m === "string" && m) setMetric(m);
+    const cm = state.compareMetric;
+    if (typeof cm === "string") setCompareMetric(cm);
+    else if (cm === null) setCompareMetric("");
+    const rk = state.rangeKey;
+    if (
+      typeof rk === "string" &&
+      rk in RANGE_MS
+    ) {
+      setRangeKey(rk as RangeKey);
+    }
+    const lv = state.live;
+    if (typeof lv === "boolean") setLive(lv);
+    const cpp = state.comparePreviousPeriod;
+    if (typeof cpp === "boolean") setComparePreviousPeriod(cpp);
+  }, []);
+
+  const copyMetricsShareLink = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (service) params.set("service", service);
+    if (metric) params.set("metric", metric);
+    params.set("range", rangeKey);
+    if (compareMetric.trim()) params.set("compare", compareMetric.trim());
+    const url = `${window.location.origin}/metrics?${params.toString()}`;
+    await navigator.clipboard.writeText(url);
+    setCopiedShare(true);
+    window.setTimeout(() => setCopiedShare(false), 2000);
+  }, [compareMetric, metric, rangeKey, service]);
 
   useEffect(() => {
     setCompareMetric("");
@@ -227,6 +305,11 @@ export function MetricsExplorer() {
     })();
   }, [metric, service]);
 
+  const metricPriorKey = useMemo(
+    () => `${metric} · prior window`,
+    [metric],
+  );
+
   const chartData = useMemo(() => {
     const byT = new Map<number, { label: string; v1?: number; v2?: number }>();
     for (const p of series) {
@@ -247,7 +330,7 @@ export function MetricsExplorer() {
       row.v2 = p.value;
       byT.set(p.t, row);
     }
-    return [...byT.entries()]
+    const rows = [...byT.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([, row]) => ({
         ...row,
@@ -256,7 +339,66 @@ export function MetricsExplorer() {
           ? { [compareMetric]: row.v2 }
           : {}),
       }));
-  }, [compareMetric, metric, series, series2]);
+
+    if (!comparePreviousPeriod || seriesPrevPrimary.length === 0) return rows;
+
+    const sortedPrev = [...seriesPrevPrimary].sort((a, b) => a.t - b.t);
+    return rows.map((row, i) =>
+      sortedPrev[i] != null
+        ? { ...row, [metricPriorKey]: sortedPrev[i].value }
+        : row,
+    );
+  }, [
+    compareMetric,
+    comparePreviousPeriod,
+    metric,
+    metricPriorKey,
+    series,
+    series2,
+    seriesPrevPrimary,
+  ]);
+
+  const exportMetricsCsv = useCallback(() => {
+    if (!chartData.length) return;
+    const keys = Object.keys(chartData[0] as object).filter((k) => k !== "label");
+    const headers = ["label", ...keys];
+    const rows = chartData.map((row) => {
+      const r = row as Record<string, string | number | undefined>;
+      return [r.label as string, ...keys.map((k) => String(r[k] ?? ""))];
+    });
+    downloadText(
+      `metrics-${metric}-${rangeKey}.csv`,
+      rowsToCsv(headers, rows),
+      "text/csv;charset=utf-8",
+    );
+  }, [chartData, metric, rangeKey]);
+
+  const exportMetricsJson = useCallback(() => {
+    downloadText(
+      `metrics-${metric}-${rangeKey}.json`,
+      JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          service,
+          metric,
+          compareMetric,
+          rangeKey,
+          comparePreviousPeriod,
+          series: chartData,
+        },
+        null,
+        2,
+      ),
+      "application/json;charset=utf-8",
+    );
+  }, [
+    chartData,
+    compareMetric,
+    comparePreviousPeriod,
+    metric,
+    rangeKey,
+    service,
+  ]);
 
   async function seedDemo() {
     setLoading(true);
@@ -293,7 +435,51 @@ export function MetricsExplorer() {
             — closer to how teams debug in production APM.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <button
+            type="button"
+            onClick={() => void copyMetricsShareLink()}
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/10"
+          >
+            {copiedShare ? "Copied link" : "Copy shareable link"}
+          </button>
+          <SavedViewsToolbar
+            page="metrics"
+            getState={() => ({
+              service,
+              metric,
+              compareMetric,
+              rangeKey,
+              live,
+              comparePreviousPeriod,
+            })}
+            applyState={applySavedState}
+          />
+          <button
+            type="button"
+            onClick={() => exportMetricsCsv()}
+            disabled={!chartData.length}
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-white/10 disabled:opacity-40"
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => exportMetricsJson()}
+            disabled={!chartData.length}
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-white/10 disabled:opacity-40"
+          >
+            Export JSON
+          </button>
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-zinc-300">
+            <input
+              type="checkbox"
+              checked={comparePreviousPeriod}
+              onChange={(e) => setComparePreviousPeriod(e.target.checked)}
+              className="rounded border-white/20"
+            />
+            Prior window
+          </label>
           <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-zinc-300">
             <input
               type="checkbox"
@@ -410,12 +596,12 @@ export function MetricsExplorer() {
                     <linearGradient id="fillPrimary" x1="0" y1="0" x2="0" y2="1">
                       <stop
                         offset="0%"
-                        stopColor="#818cf8"
+                        stopColor={pulseChartSeries.indigo}
                         stopOpacity={0.35}
                       />
                       <stop
                         offset="100%"
-                        stopColor="#818cf8"
+                        stopColor={pulseChartSeries.indigo}
                         stopOpacity={0}
                       />
                     </linearGradient>
@@ -428,36 +614,31 @@ export function MetricsExplorer() {
                     >
                       <stop
                         offset="0%"
-                        stopColor="#34d399"
+                        stopColor={pulseChartSeries.emerald}
                         stopOpacity={0.25}
                       />
                       <stop
                         offset="100%"
-                        stopColor="#34d399"
+                        stopColor={pulseChartSeries.emerald}
                         stopOpacity={0}
                       />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fill: "#a1a1aa", fontSize: 10 }}
+                    tick={pulseChartAxisTick}
                     interval="preserveStartEnd"
                   />
-                  <YAxis tick={{ fill: "#a1a1aa", fontSize: 10 }} width={40} />
+                  <YAxis tick={pulseChartAxisTick} width={40} />
                   <Tooltip
-                    contentStyle={{
-                      background: "#18181b",
-                      border: "1px solid #3f3f46",
-                      borderRadius: 8,
-                      fontSize: 11,
-                    }}
+                    contentStyle={pulseChartTooltipStyle}
                   />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Legend wrapperStyle={pulseChartLegendWrapperStyle} />
                   <Area
                     type="monotone"
                     dataKey={metric}
-                    stroke="#818cf8"
+                    stroke={pulseChartSeries.indigo}
                     strokeWidth={2}
                     fillOpacity={1}
                     fill="url(#fillPrimary)"
@@ -466,10 +647,21 @@ export function MetricsExplorer() {
                     <Area
                       type="monotone"
                       dataKey={compareMetric}
-                      stroke="#34d399"
+                      stroke={pulseChartSeries.emerald}
                       strokeWidth={2}
                       fillOpacity={1}
                       fill="url(#fillSecondary)"
+                    />
+                  ) : null}
+                  {comparePreviousPeriod ? (
+                    <Line
+                      type="monotone"
+                      dataKey={metricPriorKey}
+                      name={metricPriorKey}
+                      stroke="#94a3b8"
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      dot={false}
                     />
                   ) : null}
                 </AreaChart>

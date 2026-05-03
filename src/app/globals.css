@@ -13,7 +13,41 @@
   --pulse-accent-violet: #8b5cf6;
   --pulse-accent-cyan: #22d3ee;
   --pulse-accent-emerald: #34d399;
-  --pulse-chart-grid: rgba(255, 255, 255, 0.045);
+  --pulse-selection-fg: #fafafa;
+
+  /* Charts — chrome follows theme via these tokens */
+  --pulse-chart-tooltip-bg: rgba(12, 20, 38, 0.94);
+  --pulse-chart-tooltip-border: rgba(255, 255, 255, 0.09);
+  --pulse-chart-tooltip-shadow:
+    0 18px 48px -12px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  --pulse-chart-tooltip-label: var(--pulse-text-secondary);
+  --pulse-chart-axis-fill: var(--pulse-text-secondary);
+  --pulse-chart-axis-fill-dense: var(--pulse-text-muted);
+  --pulse-chart-grid-stroke: rgba(255, 255, 255, 0.045);
+  --pulse-chart-legend-text: var(--pulse-text-secondary);
+
+  /* Chart series & gradients (hue stays consistent across themes) */
+  --pulse-series-violet: #a78bfa;
+  --pulse-series-violet-stroke: #c4b5fd;
+  --pulse-series-violet-soft: #a5b4fc;
+  --pulse-series-cyan: #22d3ee;
+  --pulse-series-amber: #fcd34d;
+  --pulse-series-amber-line: #fbbf24;
+  --pulse-series-rose: #fb7185;
+  --pulse-series-rose-line: #f87171;
+  --pulse-series-emerald: #34d399;
+  --pulse-series-emerald-deep: #10b981;
+  --pulse-series-indigo: #818cf8;
+
+  --pulse-gradient-violet-top: #ddd6fe;
+  --pulse-gradient-violet-mid: #8b5cf6;
+  --pulse-gradient-violet-bottom: #6d28d9;
+  --pulse-gradient-cyan-top: #67e8f9;
+  --pulse-gradient-cyan-mid: #22d3ee;
+  --pulse-gradient-cyan-bottom: #0891b2;
+  --pulse-gradient-bar-top: #6ee7b7;
+  --pulse-gradient-bar-bottom: #059669;
 }
 
 @theme inline {
@@ -36,10 +70,36 @@
     letter-spacing: -0.011em;
   }
 
+  :where(a, button, input, textarea, select, summary):focus-visible {
+    outline: 2px solid var(--pulse-accent-violet);
+    outline-offset: 2px;
+  }
+
   ::selection {
     background: rgba(139, 92, 246, 0.35);
-    color: #fafafa;
+    color: var(--pulse-selection-fg);
   }
+}
+
+/* Skip link — visible on keyboard focus */
+.pulse-skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: 0.75rem;
+  z-index: 100;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: var(--pulse-accent-violet);
+  color: #fafafa;
+  transform: translateY(-180%);
+  transition: transform 0.15s ease;
+}
+.pulse-skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--pulse-accent-cyan);
+  outline-offset: 2px;
 }
 
 /* Ambient page backdrop */
@@ -141,7 +201,7 @@
   }
 
   .pulse-page {
-    @apply mx-auto flex w-full max-w-[1580px] flex-1 flex-col gap-8 px-4 py-8 sm:px-8;
+    @apply mx-auto flex w-full max-w-[1580px] flex-1 flex-col gap-8 px-4 py-8 sm:px-6 xl:px-8;
   }
 
   .pulse-page-head {
@@ -223,12 +283,16 @@
 
   /* Sidebar & logo */
   .pulse-sidebar {
-    @apply hidden w-[4.65rem] shrink-0 flex-col border-r border-white/[0.06] bg-slate-950/92 py-5 backdrop-blur-2xl lg:flex;
+    @apply hidden w-[4.65rem] shrink-0 flex-col border-r border-white/[0.06] bg-slate-950/92 py-5 backdrop-blur-2xl md:flex;
     box-shadow: 6px 0 44px -14px rgba(2, 6, 23, 0.65);
   }
 
   .pulse-nav-btn {
     @apply flex size-11 items-center justify-center rounded-xl text-zinc-500 transition duration-200;
+  }
+
+  .pulse-nav-btn:focus-visible {
+    @apply ring-2 ring-violet-400 ring-offset-2 ring-offset-slate-950;
   }
 
   .pulse-nav-btn-active {
@@ -269,5 +333,45 @@
   }
   .pulse-scroll::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.16);
+  }
+
+  /* Executive briefing — subtle entrance motion */
+  @keyframes pulse-briefing-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .pulse-briefing-rise {
+    animation: pulse-briefing-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    opacity: 0;
+  }
+
+  .pulse-briefing-rise-d1 {
+    animation-delay: 0.05s;
+  }
+  .pulse-briefing-rise-d2 {
+    animation-delay: 0.1s;
+  }
+  .pulse-briefing-rise-d3 {
+    animation-delay: 0.15s;
+  }
+  .pulse-briefing-rise-d4 {
+    animation-delay: 0.2s;
+  }
+  .pulse-briefing-rise-d5 {
+    animation-delay: 0.25s;
+  }
+
+  .pulse-briefing-hero-ring {
+    box-shadow:
+      0 0 0 1px rgba(167, 139, 250, 0.12),
+      0 24px 80px -24px rgba(49, 46, 129, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 }

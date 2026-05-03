@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getTelemetryTenantId } from "@/lib/telemetry-tenant";
 import { getNlClientIdFromServerAction } from "@/lib/nl-query-client-id";
 import { nlQueryRateLimitExceeded } from "@/lib/nl-query-rate-limit";
 import { runNlQueryPlanner } from "@/lib/nl-query-run";
@@ -13,6 +14,7 @@ export async function executeNlQuery(options: {
   prompt: string;
   pageHint?: "logs" | "metrics" | "traces";
   clientId: string;
+  tenantId: string;
 }): Promise<PlanNlQueryResult> {
   if (!process.env.OPENAI_API_KEY?.trim()) {
     return {
@@ -42,6 +44,7 @@ export async function executeNlQuery(options: {
     const plan = await runNlQueryPlanner({
       prompt: trimmed,
       pageHint: options.pageHint,
+      tenantId: options.tenantId,
     });
     return { ok: true, plan };
   } catch (e) {
@@ -58,5 +61,6 @@ export async function executeNlQueryFromAction(
   pageHint?: "logs" | "metrics" | "traces",
 ): Promise<PlanNlQueryResult> {
   const clientId = await getNlClientIdFromServerAction();
-  return executeNlQuery({ prompt, pageHint, clientId });
+  const tenantId = await getTelemetryTenantId();
+  return executeNlQuery({ prompt, pageHint, clientId, tenantId });
 }

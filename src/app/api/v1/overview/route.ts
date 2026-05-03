@@ -1,4 +1,6 @@
 import { queryAll, queryGet } from "@/db/client";
+import { appendScopeSql, parseScopeFilters } from "@/lib/scope-filters";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 type ServiceRow = {
@@ -17,8 +19,14 @@ const MIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const now = Date.now();
   const { searchParams } = new URL(req.url);
+  const scopeParsed = parseScopeFilters(searchParams);
+  if (!scopeParsed.ok) return scopeParsed.response;
+  const { filters: scope } = scopeParsed;
+  const { sql: scopeSql, params: scopeParams } = appendScopeSql(scope);
+
   const requested = Number(searchParams.get("windowMs"));
   const windowMs = Number.isFinite(requested)
     ? Math.min(MAX_WINDOW_MS, Math.max(MIN_WINDOW_MS, requested))
@@ -28,14 +36,24 @@ export async function GET(req: Request) {
 
   const serviceNames = await queryAll<{ service: string }>(
     `
-      SELECT DISTINCT service FROM metric_points WHERE ts >= ?
+      SELECT DISTINCT service FROM metric_points WHERE tenant_id = ? AND ts >= ?${scopeSql}
       UNION
-      SELECT DISTINCT service FROM log_entries WHERE ts >= ?
+      SELECT DISTINCT service FROM log_entries WHERE tenant_id = ? AND ts >= ?${scopeSql}
       UNION
-      SELECT DISTINCT service FROM trace_spans WHERE start_ts >= ?
+      SELECT DISTINCT service FROM trace_spans WHERE tenant_id = ? AND start_ts >= ?${scopeSql}
       ORDER BY service ASC
     `,
-    [since, since, since],
+    [
+      tenantId,
+      since,
+      ...scopeParams,
+      tenantId,
+      since,
+      ...scopeParams,
+      tenantId,
+      since,
+      ...scopeParams,
+    ],
   );
 
   const names = serviceNames.map((r) => r.service).filter(Boolean);
@@ -45,24 +63,24 @@ export async function GET(req: Request) {
     metricPoints1h: Number(
       (
         await queryGet<{ c: number }>(
-          `SELECT COUNT(*) AS c FROM metric_points WHERE ts >= ?`,
-          [since],
+          `SELECT COUNT(*) AS c FROM metric_points WHERE tenant_id = ? AND ts >= ?${scopeSql}`,
+          [tenantId, since, ...scopeParams],
         )
       )?.c ?? 0,
     ),
     logLines1h: Number(
       (
         await queryGet<{ c: number }>(
-          `SELECT COUNT(*) AS c FROM log_entries WHERE ts >= ?`,
-          [since],
+          `SELECT COUNT(*) AS c FROM log_entries WHERE tenant_id = ? AND ts >= ?${scopeSql}`,
+          [tenantId, since, ...scopeParams],
         )
       )?.c ?? 0,
     ),
     errorLogs1h: Number(
       (
         await queryGet<{ c: number }>(
-          `SELECT COUNT(*) AS c FROM log_entries WHERE ts >= ? AND level = 'error'`,
-          [since],
+          `SELECT COUNT(*) AS c FROM log_entries WHERE tenant_id = ? AND ts >= ? AND level = 'error'${scopeSql}`,
+          [tenantId, since, ...scopeParams],
         )
       )?.c ?? 0,
     ),
@@ -75,9 +93,9 @@ export async function GET(req: Request) {
         await queryGet<{ c: number }>(
           `
         SELECT COUNT(*) AS c FROM log_entries
-        WHERE service = ? AND ts >= ? AND level = 'error'
+        WHERE tenant_id = ? AND service = ? AND ts >= ? AND level = 'error'${scopeSql}
       `,
-          [service, since],
+          [tenantId, service, since, ...scopeParams],
         )
       )?.c ?? 0,
     );
@@ -87,9 +105,9 @@ export async function GET(req: Request) {
         await queryGet<{ c: number }>(
           `
         SELECT COUNT(*) AS c FROM log_entries
-        WHERE service = ? AND ts >= ? AND level IN ('warn','warning')
+        WHERE tenant_id = ? AND service = ? AND ts >= ? AND level IN ('warn','warning')${scopeSql}
       `,
-          [service, since],
+          [tenantId, service, since, ...scopeParams],
         )
       )?.c ?? 0,
     );
@@ -99,9 +117,9 @@ export async function GET(req: Request) {
         await queryGet<{ c: number }>(
           `
         SELECT COUNT(*) AS c FROM log_entries
-        WHERE service = ? AND ts >= ?
+        WHERE tenant_id = ? AND service = ? AND ts >= ?${scopeSql}
       `,
-          [service, since],
+          [tenantId, service, since, ...scopeParams],
         )
       )?.c ?? 0,
     );
@@ -111,26 +129,26 @@ export async function GET(req: Request) {
         await queryGet<{ c: number }>(
           `
         SELECT COUNT(*) AS c FROM metric_points
-        WHERE service = ? AND ts >= ?
+        WHERE tenant_id = ? AND service = ? AND ts >= ?${scopeSql}
       `,
-          [service, since],
+          [tenantId, service, since, ...scopeParams],
         )
       )?.c ?? 0,
     );
 
     const lastMetric = await queryGet<{ t: number | null }>(
-      `SELECT MAX(ts) AS t FROM metric_points WHERE service = ?`,
-      [service],
+      `SELECT MAX(ts) AS t FROM metric_points WHERE tenant_id = ? AND service = ?${scopeSql}`,
+      [tenantId, service, ...scopeParams],
     );
 
     const lastLog = await queryGet<{ t: number | null }>(
-      `SELECT MAX(ts) AS t FROM log_entries WHERE service = ?`,
-      [service],
+      `SELECT MAX(ts) AS t FROM log_entries WHERE tenant_id = ? AND service = ?${scopeSql}`,
+      [tenantId, service, ...scopeParams],
     );
 
     const lastTrace = await queryGet<{ t: number | null }>(
-      `SELECT MAX(end_ts) AS t FROM trace_spans WHERE service = ?`,
-      [service],
+      `SELECT MAX(end_ts) AS t FROM trace_spans WHERE tenant_id = ? AND service = ?${scopeSql}`,
+      [tenantId, service, ...scopeParams],
     );
 
     services.push({
@@ -167,6 +185,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     generatedAtMs: now,
     windowMs,
+    scope,
     totals,
     services: enriched,
   });

@@ -1,5 +1,7 @@
 import { queryAll } from "@/db/client";
+import { appendScopeSql, parseScopeFilters } from "@/lib/scope-filters";
 import { percentilesFromValues } from "@/lib/stats";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
@@ -7,8 +9,14 @@ const MIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const now = Date.now();
   const { searchParams } = new URL(req.url);
+  const scopeParsed = parseScopeFilters(searchParams);
+  if (!scopeParsed.ok) return scopeParsed.response;
+  const { filters: scope } = scopeParsed;
+  const { sql: scopeSql, params: scopeParams } = appendScopeSql(scope);
+
   const requested = Number(searchParams.get("windowMs"));
   const windowMs = Number.isFinite(requested)
     ? Math.min(MAX_WINDOW_MS, Math.max(MIN_WINDOW_MS, requested))
@@ -19,10 +27,10 @@ export async function GET(req: Request) {
     `
     SELECT service, COUNT(DISTINCT trace_id) AS traces
     FROM trace_spans
-    WHERE start_ts >= ? AND start_ts <= ?
+    WHERE tenant_id = ? AND start_ts >= ? AND start_ts <= ?${scopeSql}
     GROUP BY service
   `,
-    [since, now],
+    [tenantId, since, now, ...scopeParams],
   );
 
   const roots = await queryAll<{
@@ -33,10 +41,10 @@ export async function GET(req: Request) {
     `
     SELECT service, duration_ms AS durationMs, status
     FROM trace_spans
-    WHERE start_ts >= ? AND start_ts <= ?
-      AND (parent_span_id IS NULL OR parent_span_id = '')
+    WHERE tenant_id = ? AND start_ts >= ? AND start_ts <= ?
+      AND (parent_span_id IS NULL OR parent_span_id = '')${scopeSql}
   `,
-    [since, now],
+    [tenantId, since, now, ...scopeParams],
   );
 
   type Agg = { durations: number[]; requests: number; errors: number };
@@ -91,6 +99,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     generatedAtMs: now,
     windowMs,
+    scope,
     services,
   });
 }

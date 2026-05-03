@@ -1,15 +1,23 @@
 import { queryAll } from "@/db/client";
+import { appendScopeSql, parseScopeFilters } from "@/lib/scope-filters";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 type BucketRow = { bucket: number; avg_value: number };
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { searchParams } = new URL(req.url);
   const name = searchParams.get("name");
   const service = searchParams.get("service");
   const start = Number(searchParams.get("start"));
   const end = Number(searchParams.get("end"));
   const bucketMs = Number(searchParams.get("bucketMs")) || 60_000;
+
+  const scopeParsed = parseScopeFilters(searchParams);
+  if (!scopeParsed.ok) return scopeParsed.response;
+  const { filters: scope } = scopeParsed;
+  const { sql: scopeSql, params: scopeParams } = appendScopeSql(scope);
 
   if (!name || !service || !Number.isFinite(start) || !Number.isFinite(end)) {
     return NextResponse.json(
@@ -34,11 +42,11 @@ export async function GET(req: Request) {
       (ts / ?) * ? AS bucket,
       AVG(value) AS avg_value
     FROM metric_points
-    WHERE name = ? AND service = ? AND ts >= ? AND ts <= ?
+    WHERE tenant_id = ? AND name = ? AND service = ? AND ts >= ? AND ts <= ?${scopeSql}
     GROUP BY 1
     ORDER BY 1
   `,
-    [bucketMs, bucketMs, name, service, start, end],
+    [bucketMs, bucketMs, tenantId, name, service, start, end, ...scopeParams],
   );
 
   const series = rows.map((r) => ({
@@ -49,6 +57,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     name,
     service,
+    scope,
     start,
     end,
     bucketMs,

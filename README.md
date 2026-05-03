@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+**Trace ingest:** OTLP (`POST /ingest/otlp/v1/traces`) reads `market` from **resource attributes** (including `pulse.market` as a fallback). The JSON ingest (`POST /ingest/traces`) expects `market` as a **top-level field on each span**—same semantic, different wire shape.
+
 ## Getting Started
 
 First, run the development server:

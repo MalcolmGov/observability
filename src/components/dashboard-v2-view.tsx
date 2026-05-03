@@ -12,13 +12,9 @@ import {
   readStoredDemoSeed,
 } from "@/components/demo-launchpad";
 import {
-  PulseChartDefs,
-  pulseChartAxisTick,
-  pulseChartGridStroke,
-  pulseChartSeries,
-  pulseChartTooltipLabelStyle,
-  pulseChartTooltipStyle,
-} from "@/lib/chart-theme";
+  LatencyPercentileHeatmap,
+  SloGaugeArc,
+} from "@/components/latency-slo-viz";
 import {
   Area,
   AreaChart,
@@ -33,6 +29,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  PulseChartDefs,
+  pulseChartAxisTick,
+  pulseChartGridStroke,
+  pulseChartSeries,
+  pulseChartLegendWrapperStyle,
+  pulseChartTooltipLabelStyle,
+  pulseChartTooltipStyle,
+} from "@/lib/chart-theme";
 
 type OverviewPayload = {
   generatedAtMs: number;
@@ -150,6 +155,9 @@ export function DashboardV2View() {
   const [traceLatencySeries, setTraceLatencySeries] = useState<
     { label: string; p50: number; p95: number; p99: number }[]
   >([]);
+  const [latencyHeatBuckets, setLatencyHeatBuckets] = useState<
+    { t: number; p50Ms: number; p95Ms: number; p99Ms: number }[]
+  >([]);
   const [sloTargetSuccess, setSloTargetSuccess] = useState(0.995);
   const [serverSloTarget, setServerSloTarget] = useState<number | null>(null);
   const [sloPersistError, setSloPersistError] = useState<string | null>(null);
@@ -161,6 +169,17 @@ export function DashboardV2View() {
   useEffect(() => {
     const stored = readStoredDemoSeed();
     if (stored?.ok) setDemoSeedMeta(stored);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#demo-showroom") return;
+    requestAnimationFrame(() => {
+      document.getElementById("demo-showroom")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   }, []);
 
   useEffect(() => {
@@ -231,6 +250,7 @@ export function DashboardV2View() {
           setLogService("");
           setLogs([]);
           setTraceLatencySeries([]);
+          setLatencyHeatBuckets([]);
           setServerSloTarget(null);
         } else {
           setLogService((prev) =>
@@ -306,8 +326,10 @@ export function DashboardV2View() {
                 p99: s.p99Ms,
               })),
             );
+            setLatencyHeatBuckets(latJ.series);
           } else {
             setTraceLatencySeries([]);
+            setLatencyHeatBuckets([]);
           }
 
           const sloRes = await fetch(
@@ -329,6 +351,7 @@ export function DashboardV2View() {
         if (!quiet) {
           setApmServices([]);
           setTraceLatencySeries([]);
+          setLatencyHeatBuckets([]);
           setServerSloTarget(null);
         }
       } finally {
@@ -495,7 +518,7 @@ export function DashboardV2View() {
     <div className="pulse-page gap-6 py-6 sm:py-8">
       <header className="pulse-page-head border-white/[0.06] pb-5">
         <div>
-          <h1 className="bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-xl font-semibold tracking-tight text-transparent sm:text-[1.65rem]">
+          <h1 className="pulse-dashboard-title bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-xl font-semibold tracking-tight text-transparent sm:text-[1.65rem]">
             Command center
           </h1>
           <p className="pulse-lead">
@@ -537,12 +560,14 @@ export function DashboardV2View() {
         </div>
       </header>
 
-      <DemoLaunchpad
-        loading={loading}
-        demoMeta={demoSeedMeta}
-        seedError={demoSeedError}
-        onSeed={runDemoSeed}
-      />
+      <div id="demo-showroom">
+        <DemoLaunchpad
+          loading={loading}
+          demoMeta={demoSeedMeta}
+          seedError={demoSeedError}
+          onSeed={runDemoSeed}
+        />
+      </div>
 
       {error ? (
         <div className="pulse-alert-error">{error}</div>
@@ -659,7 +684,8 @@ export function DashboardV2View() {
               this window.
             </p>
           ) : (
-            <div className="mt-4 space-y-2 text-xs">
+            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 flex-1 space-y-2 text-xs">
               <div className="flex justify-between gap-2 text-zinc-400">
                 <span>Service</span>
                 <span className="font-medium text-zinc-200">
@@ -704,6 +730,16 @@ export function DashboardV2View() {
                 {sloInsight.errors} error roots).
               </div>
             </div>
+              {sloInsight.actualSuccessPct != null ? (
+                <div className="shrink-0 rounded-xl border border-white/[0.06] bg-slate-950/40 px-3 py-2">
+                  <SloGaugeArc
+                    actualPct={sloInsight.actualSuccessPct}
+                    targetPct={sloInsight.targetPct}
+                    label={`${sloInsight.service} · rolling success`}
+                  />
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
 
@@ -729,7 +765,7 @@ export function DashboardV2View() {
                     dataKey="label"
                     tick={pulseChartAxisTick}
                     tickLine={false}
-                    axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
+                    axisLine={{ stroke: pulseChartGridStroke }}
                     interval="preserveStartEnd"
                   />
                   <YAxis
@@ -741,7 +777,7 @@ export function DashboardV2View() {
                       value: "ms",
                       angle: -90,
                       position: "insideLeft",
-                      fill: "#71717a",
+                      fill: pulseChartAxisTick.fill,
                       fontSize: 10,
                     }}
                   />
@@ -750,9 +786,11 @@ export function DashboardV2View() {
                     labelStyle={pulseChartTooltipLabelStyle}
                   />
                   <Legend
-                    wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                    wrapperStyle={pulseChartLegendWrapperStyle}
                     formatter={(value) => (
-                      <span className="text-zinc-400">{value}</span>
+                      <span style={{ color: "var(--pulse-chart-legend-text)" }}>
+                        {value}
+                      </span>
                     )}
                   />
                   <Line
@@ -786,6 +824,29 @@ export function DashboardV2View() {
           </div>
         </div>
       </section>
+
+      {latencyHeatBuckets.length > 0 ? (
+        <section className="pulse-card p-5">
+          <div className="text-xs font-semibold text-white">
+            Latency heatmap
+          </div>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Percentile intensity over time (same buckets as the trace latency
+            chart above).
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <LatencyPercentileHeatmap
+              buckets={latencyHeatBuckets.map((b) => ({
+                t: b.t,
+                p50: b.p50Ms,
+                p95: b.p95Ms,
+                p99: b.p99Ms,
+              }))}
+              formatTick={(t) => formatTick(t, rangeMs)}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <section className="pulse-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -892,7 +953,7 @@ export function DashboardV2View() {
                     dataKey="label"
                     tick={pulseChartAxisTick}
                     tickLine={false}
-                    axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
+                    axisLine={{ stroke: pulseChartGridStroke }}
                     interval="preserveStartEnd"
                   />
                   <YAxis
@@ -939,7 +1000,7 @@ export function DashboardV2View() {
                     dataKey="label"
                     tick={pulseChartAxisTick}
                     tickLine={false}
-                    axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
+                    axisLine={{ stroke: pulseChartGridStroke }}
                     interval="preserveStartEnd"
                   />
                   <YAxis

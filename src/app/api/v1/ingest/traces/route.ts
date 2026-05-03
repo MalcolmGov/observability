@@ -1,5 +1,9 @@
 import { insertTraceSpans } from "@/db/client";
+import { ingestRejectOversizedBuffer } from "@/lib/ingest-body-limit";
+import { ingestPreReadGuards } from "@/lib/ingest-request-guards";
 import { requireIngestAuth } from "@/lib/ingest-auth";
+import { resolveIngestTenantId } from "@/lib/telemetry-tenant";
+import { maybeRunTelemetryRetentionAfterWrite } from "@/lib/telemetry-retention-inline";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -16,6 +20,13 @@ const spanSchema = z.object({
   status: z.enum(["ok", "error"]).optional(),
   peer_service: z.string().optional().nullable(),
   attributes: z.record(z.string(), z.unknown()).optional(),
+  events: z.array(z.unknown()).optional(),
+  links: z.array(z.unknown()).optional(),
+  product: z.string().optional(),
+  market: z.string().optional(),
+  environment: z.string().optional(),
+  version: z.string().optional().nullable(),
+  instance_id: z.string().optional().nullable(),
 });
 
 const bodySchema = z.object({
@@ -26,9 +37,20 @@ export async function POST(req: Request) {
   const unauthorized = requireIngestAuth(req);
   if (unauthorized) return unauthorized;
 
+  const gated = ingestPreReadGuards(req, "json");
+  if (gated) return gated;
+
+  const tenantGate = resolveIngestTenantId(req);
+  if (tenantGate instanceof NextResponse) return tenantGate;
+  const tenantId = tenantGate;
+
+  const raw = Buffer.from(await req.arrayBuffer());
+  const tooBig = ingestRejectOversizedBuffer(raw, "json");
+  if (tooBig) return tooBig;
+
   let json: unknown;
   try {
-    json = await req.json();
+    json = JSON.parse(raw.toString("utf8")) as unknown;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -52,6 +74,7 @@ export async function POST(req: Request) {
       })();
 
     return {
+      tenantId,
       traceId: s.trace_id,
       spanId: s.span_id,
       parentSpanId: s.parent_span_id ?? null,
@@ -64,6 +87,13 @@ export async function POST(req: Request) {
       status: s.status ?? "ok",
       peerService: s.peer_service ?? null,
       attributesJson: JSON.stringify(s.attributes ?? {}),
+      eventsJson: JSON.stringify(s.events ?? []),
+      linksJson: JSON.stringify(s.links ?? []),
+      product: s.product,
+      market: s.market,
+      environment: s.environment,
+      version: s.version ?? undefined,
+      instanceId: s.instance_id ?? undefined,
     };
   });
 
@@ -72,6 +102,7 @@ export async function POST(req: Request) {
   }
 
   await insertTraceSpans(rows);
+  await maybeRunTelemetryRetentionAfterWrite();
 
   return NextResponse.json({ accepted: rows.length });
 }

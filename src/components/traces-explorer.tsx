@@ -7,6 +7,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import type { NlQueryApiResponse } from "@/lib/nl-query-schema";
 import { NlQueryPanel } from "@/components/nl-query-panel";
+import { SavedViewsToolbar } from "@/components/saved-views-toolbar";
+
+const LOOKBACK_OPTIONS = [
+  { label: "1h", ms: 60 * 60 * 1000 },
+  { label: "6h", ms: 6 * 60 * 60 * 1000 },
+  { label: "24h", ms: 24 * 60 * 60 * 1000 },
+  { label: "7d", ms: 7 * 24 * 60 * 60 * 1000 },
+] as const;
 
 type TraceRow = {
   traceId: string;
@@ -30,6 +38,7 @@ export function TracesExplorer() {
   const [minDurationMs, setMinDurationMs] = useState("");
   const [lookbackMs, setLookbackMs] = useState(24 * 60 * 60 * 1000);
   const [live, setLive] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
 
   const loadServices = useCallback(async () => {
     const res = await fetch("/api/v1/services");
@@ -107,6 +116,35 @@ export function TracesExplorer() {
     setLookbackMs(plan.traces.lookbackMs);
   }, []);
 
+  const applySavedState = useCallback((state: Record<string, unknown>) => {
+    const svc = state.service;
+    if (typeof svc === "string") setService(svc);
+    const eo = state.errorsOnly;
+    if (typeof eo === "boolean") setErrorsOnly(eo);
+    const md = state.minDurationMs;
+    if (typeof md === "string") setMinDurationMs(md);
+    else if (md === null || md === undefined) setMinDurationMs("");
+    const lb = state.lookbackMs;
+    if (typeof lb === "number" && Number.isFinite(lb) && lb > 0) {
+      setLookbackMs(lb);
+    }
+    const lv = state.live;
+    if (typeof lv === "boolean") setLive(lv);
+  }, []);
+
+  const copyTracesShareLink = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (service) params.set("service", service);
+    if (errorsOnly) params.set("errors", "1");
+    const md = Number(minDurationMs);
+    if (Number.isFinite(md) && md > 0) params.set("minMs", String(md));
+    params.set("lookbackMs", String(lookbackMs));
+    const url = `${window.location.origin}/traces?${params.toString()}`;
+    await navigator.clipboard.writeText(url);
+    setCopiedShare(true);
+    window.setTimeout(() => setCopiedShare(false), 2000);
+  }, [errorsOnly, lookbackMs, minDurationMs, service]);
+
   async function seedDemo() {
     setError(null);
     try {
@@ -136,6 +174,24 @@ export function TracesExplorer() {
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
+          <button
+            type="button"
+            onClick={() => void copyTracesShareLink()}
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/10"
+          >
+            {copiedShare ? "Copied link" : "Copy shareable link"}
+          </button>
+          <SavedViewsToolbar
+            page="traces"
+            getState={() => ({
+              service,
+              errorsOnly,
+              minDurationMs,
+              lookbackMs,
+              live,
+            })}
+            applyState={applySavedState}
+          />
           <label className="flex flex-col gap-1 text-xs text-zinc-500">
             Service filter
             <select
@@ -170,6 +226,28 @@ export function TracesExplorer() {
               className="rounded border-white/20"
             />
             Errors only
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-zinc-500">
+            Lookback
+            <select
+              className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              value={String(lookbackMs)}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isFinite(n) && n > 0) setLookbackMs(n);
+              }}
+            >
+              {LOOKBACK_OPTIONS.map((o) => (
+                <option key={o.ms} value={String(o.ms)}>
+                  {o.label}
+                </option>
+              ))}
+              {!LOOKBACK_OPTIONS.some((o) => o.ms === lookbackMs) ? (
+                <option value={String(lookbackMs)}>
+                  Other ({Math.round(lookbackMs / 3600000)}h)
+                </option>
+              ) : null}
+            </select>
           </label>
           <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300">
             <input

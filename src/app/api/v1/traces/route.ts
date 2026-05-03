@@ -1,8 +1,16 @@
 import { queryAll } from "@/db/client";
+import { parseScopeFilters, scopeSqlFragments } from "@/lib/scope-filters";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { searchParams } = new URL(req.url);
+  const scopeParsed = parseScopeFilters(searchParams);
+  if (!scopeParsed.ok) return scopeParsed.response;
+  const { filters: scope } = scopeParsed;
+  const { fragments: scopeParts, params: scopeParams } = scopeSqlFragments(scope);
+
   const service = searchParams.get("service");
   const limit = Math.min(Number(searchParams.get("limit")) || 50, 200);
   const sinceMs = Number(searchParams.get("sinceMs"));
@@ -16,20 +24,14 @@ export async function GET(req: Request) {
   const minDurationMs =
     Number.isFinite(minDurRaw) && minDurRaw > 0 ? minDurRaw : null;
 
-  const filters: string[] = ["start_ts >= ?"];
-  const params: unknown[] = [since];
-
-  if (service) {
-    filters.push(`trace_id IN (
-      SELECT trace_id FROM trace_spans
-      WHERE start_ts >= ?
-      GROUP BY trace_id
-      HAVING SUM(CASE WHEN service = ? THEN 1 ELSE 0 END) > 0
-    )`);
-    params.push(since, service);
-  }
+  const filters: string[] = ["tenant_id = ?", "start_ts >= ?", ...scopeParts];
+  const params: unknown[] = [tenantId, since, ...scopeParams];
 
   const having: string[] = [];
+  if (service) {
+    having.push(`SUM(CASE WHEN service = ? THEN 1 ELSE 0 END) > 0`);
+    params.push(service);
+  }
   if (errorsOnly) {
     having.push(`SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) > 0`);
   }
@@ -52,16 +54,18 @@ export async function GET(req: Request) {
       (
         SELECT s.service FROM trace_spans s
         WHERE s.trace_id = trace_spans.trace_id
+          AND s.tenant_id = trace_spans.tenant_id
         ORDER BY s.start_ts ASC LIMIT 1
       ) AS rootService,
       (
         SELECT s2.name FROM trace_spans s2
         WHERE s2.trace_id = trace_spans.trace_id
+          AND s2.tenant_id = trace_spans.tenant_id
         ORDER BY s2.start_ts ASC LIMIT 1
       ) AS rootName
     FROM trace_spans
     WHERE ${filters.join(" AND ")}
-    GROUP BY trace_id
+    GROUP BY trace_id, tenant_id
     ${havingSql}
     ORDER BY MIN(start_ts) DESC
     LIMIT ?
@@ -93,6 +97,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     traces,
     since,
+    scope,
     filters: { errorsOnly, minDurationMs },
   });
 }

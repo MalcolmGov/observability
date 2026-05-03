@@ -3,11 +3,13 @@ import {
   appendLogAttributeExistsClause,
   LOG_ATTR_KEY_RE,
 } from "@/lib/log-attr-filter";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { isPostgres } from "@/lib/sql-dialect";
 import { NextResponse } from "next/server";
 
 /** Facet counts for log explorer (same filter dimensions as /query/logs except level). */
 export async function GET(req: Request) {
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const { searchParams } = new URL(req.url);
   const service = searchParams.get("service");
   const q = searchParams.get("q")?.trim() ?? "";
@@ -19,8 +21,8 @@ export async function GET(req: Request) {
 
   const dialect = isPostgres() ? "postgres" : "sqlite";
 
-  const parts = [`FROM log_entries`, `WHERE service = ?`];
-  const params: unknown[] = [service];
+  const parts = [`FROM log_entries`, `WHERE tenant_id = ? AND service = ?`];
+  const params: unknown[] = [tenantId, service];
 
   if (q) {
     parts.push(

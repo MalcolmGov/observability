@@ -3,12 +3,14 @@
 import { format } from "date-fns";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LOG_ATTR_KEY_RE } from "@/lib/log-attr-filter";
 import { traceIdFromAttributes } from "@/lib/trace-id";
 import type { NlQueryApiResponse } from "@/lib/nl-query-schema";
 import { NlQueryPanel } from "@/components/nl-query-panel";
+import { SavedViewsToolbar } from "@/components/saved-views-toolbar";
+import { downloadText, rowsToCsv } from "@/lib/export-download";
 
 type LogRow = {
   ts: number;
@@ -54,6 +56,42 @@ export function LogsExplorer() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [live, setLive] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
+
+  const logListScrollRef = useRef<HTMLDivElement>(null);
+  const liveEsRef = useRef<EventSource | null>(null);
+
+  const applySavedState = useCallback((state: Record<string, unknown>) => {
+    const svc = state.service;
+    if (typeof svc === "string" && svc) setService(svc);
+    const wm = state.logWindowMs;
+    if (typeof wm === "number" && Number.isFinite(wm) && wm > 0) {
+      setLogWindowMs(wm);
+    }
+    const qv = state.q;
+    if (typeof qv === "string") {
+      setQInput(qv);
+      setQ(qv);
+    }
+    const lv = state.level;
+    if (typeof lv === "string" && (LEVELS as readonly string[]).includes(lv)) {
+      setLevel(lv);
+    }
+    const tf = state.traceFilter;
+    if (typeof tf === "string") {
+      setTraceFilter(tf);
+    }
+    const ak = state.attrKey;
+    if (typeof ak === "string") {
+      setAttrKeyInput(ak);
+      setAttrKey(ak);
+    }
+    const av = state.attrValue;
+    if (typeof av === "string") {
+      setAttrValueInput(av);
+      setAttrValue(av);
+    }
+  }, []);
 
   const loadServices = useCallback(async () => {
     const res = await fetch("/api/v1/services");
@@ -192,6 +230,7 @@ export function LogsExplorer() {
   }, [attrValueInput]);
 
   useEffect(() => {
+    if (live) return;
     void (async () => {
       setLoading(true);
       setError(null);
@@ -204,12 +243,140 @@ export function LogsExplorer() {
         setLoading(false);
       }
     })();
-  }, [loadFacets, loadLogs]);
+  }, [live, loadFacets, loadLogs]);
 
-  useLiveRefresh(live, 10_000, () => {
-    void loadLogs().catch(() => {});
-    void loadFacets().catch(() => {});
+  useEffect(() => {
+    if (!live || !service) {
+      liveEsRef.current?.close();
+      liveEsRef.current = null;
+      return;
+    }
+
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        await loadLogs();
+        await loadFacets();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed");
+      } finally {
+        setLoading(false);
+      }
+    })();
+
+    const u = new URL("/api/v1/stream/logs", window.location.origin);
+    u.searchParams.set("service", service);
+    u.searchParams.set("intervalMs", "2500");
+    if (q) u.searchParams.set("q", q);
+    if (level && level !== "all") u.searchParams.set("level", level);
+    if (traceFilter.trim()) u.searchParams.set("traceId", traceFilter.trim());
+    const ak = attrKey.trim();
+    if (ak && LOG_ATTR_KEY_RE.test(ak)) {
+      u.searchParams.set("attrKey", ak);
+      const av = attrValue.trim();
+      if (av) u.searchParams.set("attrValue", av);
+    }
+
+    liveEsRef.current?.close();
+    const es = new EventSource(u.toString());
+    liveEsRef.current = es;
+
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data as string) as {
+          type?: string;
+          log?: LogRow;
+        };
+        if (msg.type === "log" && msg.log) {
+          const incoming = msg.log;
+          setLogs((prev) => {
+            const key = `${incoming.ts}:${incoming.level}:${incoming.message}`;
+            if (prev.some((p) => `${p.ts}:${p.level}:${p.message}` === key)) {
+              return prev;
+            }
+            return [incoming, ...prev].slice(0, 250);
+          });
+        }
+      } catch {
+        /* ignore malformed SSE */
+      }
+    };
+
+    return () => {
+      es.close();
+      liveEsRef.current = null;
+    };
+  }, [
+    live,
+    service,
+    q,
+    level,
+    traceFilter,
+    attrKey,
+    attrValue,
+    loadLogs,
+    loadFacets,
+  ]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => logListScrollRef.current,
+    estimateSize: () => 44,
+    overscan: 12,
   });
+
+  const exportLogsCsv = useCallback(() => {
+    if (!logs.length) return;
+    const headers = ["ts_iso", "level", "message", "attributes_json"];
+    const rows = logs.map((l) => [
+      new Date(l.ts).toISOString(),
+      l.level,
+      l.message,
+      JSON.stringify(l.attributes),
+    ]);
+    downloadText(
+      `logs-${service || "all"}-${Date.now()}.csv`,
+      rowsToCsv(headers, rows),
+      "text/csv;charset=utf-8",
+    );
+  }, [logs, service]);
+
+  const exportLogsJson = useCallback(() => {
+    downloadText(
+      `logs-${service || "all"}-${Date.now()}.json`,
+      JSON.stringify({ exportedAt: new Date().toISOString(), logs }, null, 2),
+      "application/json;charset=utf-8",
+    );
+  }, [logs, service]);
+
+  const copyLogsShareLink = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (service) params.set("service", service);
+    params.set("windowMs", String(logWindowMs));
+    if (q.trim()) params.set("q", q.trim());
+    if (level && level !== "all") params.set("level", level);
+    const tf = traceFilter.trim();
+    if (tf) params.set("traceId", tf);
+    const ak = attrKey.trim();
+    if (ak && LOG_ATTR_KEY_RE.test(ak)) {
+      params.set("attrKey", ak);
+      const av = attrValue.trim();
+      if (av) params.set("attrValue", av);
+    }
+    const url = `${window.location.origin}/logs?${params.toString()}`;
+    await navigator.clipboard.writeText(url);
+    setCopiedShare(true);
+    window.setTimeout(() => setCopiedShare(false), 2000);
+  }, [
+    attrKey,
+    attrValue,
+    level,
+    logWindowMs,
+    q,
+    service,
+    traceFilter,
+  ]);
 
   const levelSummary = useMemo(() => {
     const m = new Map<string, number>();
@@ -249,6 +416,42 @@ export function LogsExplorer() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void copyLogsShareLink()}
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-white/10"
+          >
+            {copiedShare ? "Copied link" : "Copy shareable link"}
+          </button>
+          <SavedViewsToolbar
+            page="logs"
+            getState={() => ({
+              service,
+              logWindowMs,
+              q,
+              level,
+              traceFilter,
+              attrKey,
+              attrValue,
+            })}
+            applyState={applySavedState}
+          />
+          <button
+            type="button"
+            onClick={() => exportLogsCsv()}
+            disabled={!logs.length}
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-white/10 disabled:opacity-40"
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => exportLogsJson()}
+            disabled={!logs.length}
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-zinc-100 hover:bg-white/10 disabled:opacity-40"
+          >
+            Export JSON
+          </button>
           <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-zinc-300">
             <input
               type="checkbox"
@@ -256,7 +459,7 @@ export function LogsExplorer() {
               onChange={(e) => setLive(e.target.checked)}
               className="rounded border-white/20"
             />
-            Live tail (10s)
+            Live tail (SSE)
           </label>
           <button
             type="button"
@@ -489,72 +692,90 @@ export function LogsExplorer() {
           <div className="text-center">Trace</div>
           <div className="text-right">Ctx</div>
         </div>
-        <div className="max-h-[min(70vh,720px)] overflow-y-auto">
+        <div className="max-h-[min(70vh,720px)] overflow-y-auto" ref={logListScrollRef}>
           {logs.length === 0 ? (
             <div className="px-4 py-16 text-center text-sm text-zinc-500">
               No logs match. Try another query or ingest pipeline.
             </div>
           ) : (
-            logs.map((l, idx) => (
-              <div key={`${l.ts}-${idx}`} className="border-b border-white/5">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    setExpanded((e) => ({ ...e, [idx]: !e[idx] }))
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setExpanded((ex) => ({ ...ex, [idx]: !ex[idx] }));
-                    }
-                  }}
-                  className="grid w-full cursor-pointer grid-cols-[88px_64px_minmax(0,1fr)_72px_52px] gap-2 px-3 py-2 text-left outline-none transition hover:bg-white/[0.04] focus-visible:ring-1 focus-visible:ring-indigo-500/50"
-                >
-                  <div className="text-zinc-500">
-                    {format(new Date(l.ts), "HH:mm:ss")}
-                  </div>
+            <div
+              className="relative w-full"
+              style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+            >
+              {rowVirtualizer.getVirtualItems().map((vi) => {
+                const idx = vi.index;
+                const l = logs[idx]!;
+                return (
                   <div
-                    className={
-                      l.level === "error"
-                        ? "text-red-400"
-                        : l.level === "warn"
-                          ? "text-amber-300"
-                          : "text-emerald-400"
-                    }
+                    key={vi.key}
+                    data-index={idx}
+                    ref={rowVirtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full border-b border-white/5"
+                    style={{ transform: `translateY(${vi.start}px)` }}
                   >
-                    {l.level}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
+                        setExpanded((e) => ({ ...e, [idx]: !e[idx] }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpanded((ex) => ({
+                            ...ex,
+                            [idx]: !ex[idx],
+                          }));
+                        }
+                      }}
+                      className="grid w-full cursor-pointer grid-cols-[88px_64px_minmax(0,1fr)_72px_52px] gap-2 px-3 py-2 text-left outline-none transition hover:bg-white/[0.04] focus-visible:ring-1 focus-visible:ring-indigo-500/50"
+                    >
+                      <div className="text-zinc-500">
+                        {format(new Date(l.ts), "HH:mm:ss")}
+                      </div>
+                      <div
+                        className={
+                          l.level === "error"
+                            ? "text-red-400"
+                            : l.level === "warn"
+                              ? "text-amber-300"
+                              : "text-emerald-400"
+                        }
+                      >
+                        {l.level}
+                      </div>
+                      <div className="truncate text-zinc-200">{l.message}</div>
+                      <div className="flex items-center justify-center">
+                        {(() => {
+                          const tid = traceIdFromAttributes(l.attributes);
+                          return tid ? (
+                            <Link
+                              href={`/traces/${encodeURIComponent(tid)}`}
+                              className="text-indigo-400 hover:text-indigo-300"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View
+                            </Link>
+                          ) : (
+                            <span className="text-zinc-600">—</span>
+                          );
+                        })()}
+                      </div>
+                      <div className="text-right text-indigo-300/90">
+                        {Object.keys(l.attributes ?? {}).length ? "JSON" : "—"}
+                      </div>
+                    </div>
+                    {expanded[idx] ? (
+                      <div className="mx-3 mb-2 rounded-lg bg-slate-950/80 p-3 font-mono text-[10px] text-zinc-400">
+                        <pre className="whitespace-pre-wrap break-all">
+                          {JSON.stringify(l.attributes, null, 2)}
+                        </pre>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="truncate text-zinc-200">{l.message}</div>
-                  <div className="flex items-center justify-center">
-                    {(() => {
-                      const tid = traceIdFromAttributes(l.attributes);
-                      return tid ? (
-                        <Link
-                          href={`/traces/${encodeURIComponent(tid)}`}
-                          className="text-indigo-400 hover:text-indigo-300"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          View
-                        </Link>
-                      ) : (
-                        <span className="text-zinc-600">—</span>
-                      );
-                    })()}
-                  </div>
-                  <div className="text-right text-indigo-300/90">
-                    {Object.keys(l.attributes ?? {}).length ? "JSON" : "—"}
-                  </div>
-                </div>
-                {expanded[idx] ? (
-                  <div className="mx-3 mb-2 rounded-lg bg-slate-950/80 p-3 font-mono text-[10px] text-zinc-400">
-                    <pre className="whitespace-pre-wrap break-all">
-                      {JSON.stringify(l.attributes, null, 2)}
-                    </pre>
-                  </div>
-                ) : null}
-              </div>
-            ))
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

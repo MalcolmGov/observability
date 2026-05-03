@@ -1,6 +1,7 @@
 import {
   executeNlQuery,
 } from "@/lib/nl-query-handlers";
+import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { getNlClientIdFromRequest } from "@/lib/nl-query-client-id";
 import { requireNlQueryApiAuth } from "@/lib/nl-query-auth";
 import { NextResponse } from "next/server";
@@ -31,10 +32,12 @@ export async function POST(req: Request) {
   }
 
   const clientId = getNlClientIdFromRequest(req);
+  const tenantId = getTelemetryTenantIdFromRequest(req);
   const result = await executeNlQuery({
     prompt: parsed.data.prompt,
     pageHint: parsed.data.pageHint,
     clientId,
+    tenantId,
   });
 
   if (!result.ok) {

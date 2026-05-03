@@ -1,10 +1,13 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ServiceMapGraph } from "@/components/service-map-graph";
 
 type Edge = { source: string; target: string; weight: number };
 
 export function ServiceMapView() {
+  const searchParams = useSearchParams();
   const [nodes, setNodes] = useState<string[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [since, setSince] = useState<number>(0);
@@ -12,7 +15,11 @@ export function ServiceMapView() {
 
   const load = useCallback(async () => {
     setError(null);
-    const sinceMs = Date.now() - 60 * 60 * 1000;
+    const paramSince = Number(searchParams.get("sinceMs"));
+    const windowMs = Number.isFinite(paramSince) && paramSince > 0
+      ? paramSince
+      : 60 * 60 * 1000;
+    const sinceMs = Date.now() - windowMs;
     const res = await fetch(`/api/v1/service-map?sinceMs=${sinceMs}`);
     if (!res.ok) {
       setError("Failed to load map");
@@ -26,7 +33,7 @@ export function ServiceMapView() {
     setSince(data.since);
     setNodes(data.nodes);
     setEdges(data.edges);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     void load();
@@ -64,6 +71,19 @@ export function ServiceMapView() {
           {error}
         </div>
       ) : null}
+
+      <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-6 shadow-lg shadow-slate-950/25">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Topology
+        </h2>
+        <p className="mt-1 text-[11px] text-zinc-600">
+          Layered dependency graph from inferred edges (drag scroll on small
+          screens).
+        </p>
+        <div className="mt-4">
+          <ServiceMapGraph nodes={nodes} edges={edges} />
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-6 shadow-lg shadow-slate-950/25">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">

@@ -8,6 +8,69 @@
       "when": 1777780505783,
       "tag": "0000_lowly_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1746288000000,
+      "tag": "0001_dapper_black_bolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747603200000,
+      "tag": "0002_trace_span_events_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1747689600000,
+      "tag": "0003_saved_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1747776000000,
+      "tag": "0004_alert_channels_silences_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1747862400000,
+      "tag": "0005_product_market_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1747948800000,
+      "tag": "0006_service_catalog_telemetry_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1748035200000,
+      "tag": "0007_service_catalog_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1748121600000,
+      "tag": "0008_alert_rules_market_scope_sentinels",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1748208000000,
+      "tag": "0009_service_catalog_strip_unknown_market",
+      "breakpoints": true
     }
   ]
 }
