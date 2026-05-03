@@ -269,6 +269,42 @@ CREATE INDEX IF NOT EXISTS service_catalog_enabled_idx ON service_catalog(enable
 }
 
 /** One-shot hygiene: remove legacy `unknown` from catalog JSON arrays (matches PG migration 0009). */
+/** PG-mirror of 0010 — adds severity column and alert_routes table. */
+function migrateAlertRoutesAndSeverity(sqlite: InstanceType<typeof Database>) {
+  try {
+    sqlite.exec(
+      `ALTER TABLE alert_rules ADD COLUMN severity TEXT NOT NULL DEFAULT 'warning';`,
+    );
+  } catch {
+    /* exists */
+  }
+  sqlite.exec(`
+CREATE TABLE IF NOT EXISTS alert_routes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope_type TEXT NOT NULL,
+  scope_value TEXT,
+  channel_type TEXT NOT NULL,
+  channel_value TEXT NOT NULL,
+  severity_min TEXT NOT NULL DEFAULT 'warning',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  CHECK (scope_type IN ('market', 'team', 'default')),
+  CHECK (channel_type IN ('slack', 'pagerduty', 'webhook', 'email')),
+  CHECK (severity_min IN ('info', 'warning', 'critical'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS alert_routes_scoped_uidx
+  ON alert_routes (scope_type, scope_value, channel_type)
+  WHERE scope_value IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS alert_routes_default_uidx
+  ON alert_routes (scope_type, channel_type)
+  WHERE scope_value IS NULL;
+CREATE INDEX IF NOT EXISTS alert_routes_scope_lookup_idx
+  ON alert_routes (scope_type, scope_value)
+  WHERE enabled = 1;
+`);
+}
+
 function migrateCatalogStripUnknownMarkets(sqlite: InstanceType<typeof Database>) {
   const rows = sqlite
     .prepare(
@@ -460,6 +496,7 @@ CREATE INDEX IF NOT EXISTS alert_notification_log_dedupe_idx ON alert_notificati
   migrateAlertRulesMarketScopeSentinels(sqlite);
   migrateServiceCatalog(sqlite);
   migrateCatalogStripUnknownMarkets(sqlite);
+  migrateAlertRoutesAndSeverity(sqlite);
 
   return sqlite;
 }

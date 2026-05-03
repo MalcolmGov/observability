@@ -97,6 +97,19 @@ export const alertRules = sqliteTable("alert_rules", {
   product: text("product"),
   marketScope: text("market_scope"),
   environment: text("environment").notNull().default("prod"),
+  severity: text("severity").notNull().default("warning"),
+});
+
+export const alertRoutes = sqliteTable("alert_routes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  scopeType: text("scope_type").notNull(),
+  scopeValue: text("scope_value"),
+  channelType: text("channel_type").notNull(),
+  channelValue: text("channel_value").notNull(),
+  severityMin: text("severity_min").notNull().default("warning"),
+  enabled: integer("enabled").notNull().default(1),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
 });
 
 export const sloTargets = sqliteTable(

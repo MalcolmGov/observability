@@ -4,6 +4,12 @@ import {
   notifyPagerDutyTrigger,
   notifySlackIncomingWebhook,
 } from "@/lib/alert-notify";
+import {
+  loadAllRoutes,
+  resolveRouteTargets,
+  SEVERITIES,
+  type Severity,
+} from "@/lib/alert-routing-resolver";
 import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 
@@ -22,7 +28,25 @@ type RuleDbRow = {
   product: string | null;
   market_scope: string | null;
   environment: string | null;
+  severity: string | null;
 };
+
+function parseSeverity(s: string | null): Severity {
+  return s && (SEVERITIES as readonly string[]).includes(s)
+    ? (s as Severity)
+    : "warning";
+}
+
+/** Tiny stable hex digest of a string — used to tag per-target dedup keys.
+ *  Not security-sensitive; FNV-1a is plenty for short, single-rule scopes. */
+function simpleHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
 
 function groupWindowMs(): number {
   const n = Number(process.env.PULSE_ALERT_GROUP_WINDOW_MS);
@@ -112,10 +136,12 @@ export async function GET(req: Request) {
   const rules = await queryAll<RuleDbRow>(
     `SELECT id, name, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment
+            product, market_scope, environment, severity
      FROM alert_rules WHERE enabled = 1`,
     [],
   );
+
+  const allRoutes = await loadAllRoutes();
 
   const now = Date.now();
   const win = groupWindowMs();
@@ -132,6 +158,8 @@ export async function GET(req: Request) {
     environment: string;
     product: string | null;
     marketScope: string | null;
+    severity: Severity;
+    breachedMarkets: string[];
     observedAvg: number | null;
     firing: boolean;
     silenced: boolean;
@@ -145,42 +173,90 @@ export async function GET(req: Request) {
   for (const r of rules) {
     const since = now - r.window_minutes * 60 * 1000;
     const env = (r.environment ?? "prod").trim() || "prod";
-    const metricParams: unknown[] = [
-      tenantId,
-      r.metric_name,
-      r.service,
-      since,
-      env,
-    ];
-    let metricSql = `SELECT AVG(value) AS avg_value FROM metric_points
-      WHERE tenant_id = ? AND name = ? AND service = ? AND ts >= ?
-        AND environment = ?`;
-
     const prod = r.product?.trim();
-    if (prod) {
-      metricSql += ` AND product = ?`;
-      metricParams.push(prod);
+    const severity = parseSeverity(r.severity);
+
+    const scopedMarkets = r.market_scope
+      ? r.market_scope.split(",").map((m) => m.trim()).filter(Boolean)
+      : [];
+
+    function checkBreach(v: number): boolean {
+      return r.comparator === "gt" ? v > r.threshold : v < r.threshold;
     }
 
-    if (r.market_scope) {
-      const markets = r.market_scope.split(",").filter(Boolean);
-      if (markets.length > 0) {
-        const ph = markets.map(() => "?").join(", ");
-        metricSql += ` AND market IN (${ph})`;
-        metricParams.push(...markets);
+    let observedAvg: number | null = null;
+    let breachedMarkets: string[] = [];
+
+    if (scopedMarkets.length >= 2) {
+      // Multi-market scope — per-market breakdown so the resolver can route to
+      // the specific markets that breached.
+      const params: unknown[] = [
+        tenantId,
+        r.metric_name,
+        r.service,
+        since,
+        env,
+      ];
+      let sql = `SELECT market, AVG(value) AS avg_value FROM metric_points
+        WHERE tenant_id = ? AND name = ? AND service = ? AND ts >= ?
+          AND environment = ?`;
+      if (prod) {
+        sql += ` AND product = ?`;
+        params.push(prod);
       }
+      const ph = scopedMarkets.map(() => "?").join(", ");
+      sql += ` AND market IN (${ph}) GROUP BY market`;
+      params.push(...scopedMarkets);
+
+      const rows = await queryAll<{ market: string; avg_value: number | null }>(
+        sql,
+        params,
+      );
+      const valid = rows
+        .map((rr) => ({ market: rr.market, v: rr.avg_value }))
+        .filter((x): x is { market: string; v: number } =>
+          x.v != null && Number.isFinite(Number(x.v)),
+        );
+      breachedMarkets = valid
+        .filter((x) => checkBreach(Number(x.v)))
+        .map((x) => x.market);
+      observedAvg = valid.length
+        ? valid.reduce((acc, x) => acc + Number(x.v), 0) / valid.length
+        : null;
+    } else {
+      // 0 or 1 market in scope — single AVG (preserves prior semantics).
+      const params: unknown[] = [
+        tenantId,
+        r.metric_name,
+        r.service,
+        since,
+        env,
+      ];
+      let sql = `SELECT AVG(value) AS avg_value FROM metric_points
+        WHERE tenant_id = ? AND name = ? AND service = ? AND ts >= ?
+          AND environment = ?`;
+      if (prod) {
+        sql += ` AND product = ?`;
+        params.push(prod);
+      }
+      if (scopedMarkets.length === 1) {
+        sql += ` AND market = ?`;
+        params.push(scopedMarkets[0]);
+      }
+      const row = await queryGet<{ avg_value: number | null }>(sql, params);
+      observedAvg = row?.avg_value != null ? Number(row.avg_value) : null;
+      const fires =
+        observedAvg != null &&
+        Number.isFinite(observedAvg) &&
+        checkBreach(observedAvg);
+      breachedMarkets = fires
+        ? scopedMarkets.length === 1
+          ? [scopedMarkets[0]]
+          : ["ALL"]
+        : [];
     }
 
-    const row = await queryGet<{ avg_value: number | null }>(
-      metricSql,
-      metricParams,
-    );
-    const value = row?.avg_value ?? null;
-    let firing = false;
-    if (value != null && Number.isFinite(Number(value))) {
-      const v = Number(value);
-      firing = r.comparator === "gt" ? v > r.threshold : v < r.threshold;
-    }
+    const firing = breachedMarkets.length > 0;
 
     const silenced = firing && (await ruleIsSilenced(tenantId, r.id, now));
     if (silenced) skippedSilence++;
@@ -190,7 +266,7 @@ export async function GET(req: Request) {
       r.id,
       now,
       firing,
-      value != null ? Number(value) : null,
+      observedAvg,
       silenced,
     );
 
@@ -206,7 +282,9 @@ export async function GET(req: Request) {
       environment: env,
       product: prod ?? null,
       marketScope: r.market_scope ?? null,
-      observedAvg: value != null ? Number(value) : null,
+      severity,
+      breachedMarkets,
+      observedAvg,
       firing,
       silenced,
       evaluatedAtMs: now,
@@ -214,7 +292,10 @@ export async function GET(req: Request) {
 
     if (!firing || silenced) continue;
 
-    const summary = `Pulse alert: ${r.name} — ${r.metric_name} @ ${r.service} avg ${value != null ? Number(value).toFixed(2) : "?"} (threshold ${r.comparator} ${r.threshold})`;
+    const breachedSummary = breachedMarkets.length
+      ? ` [${breachedMarkets.join(",")}]`
+      : "";
+    const summary = `Pulse alert: ${r.name} — ${r.metric_name} @ ${r.service} avg ${observedAvg != null ? observedAvg.toFixed(2) : "?"} (threshold ${r.comparator} ${r.threshold})${breachedSummary}`;
 
     const payload = {
       event: "pulse.alert.firing",
@@ -228,49 +309,105 @@ export async function GET(req: Request) {
         threshold: r.threshold,
         windowMinutes: r.window_minutes,
         runbookUrl: r.runbook_url ?? null,
+        severity,
+        breachedMarkets,
       },
-      observedAvg: value != null ? Number(value) : null,
+      observedAvg,
     };
 
+    // Send through a channel + value pair, dedup keyed per-target so two
+    // different Slack channels (e.g. #ops-ng and #ops-ke) don't suppress each
+    // other for the same rule.
+    type Dispatch = {
+      channelType: "slack" | "pagerduty" | "webhook" | "email";
+      value: string;
+      reason: string;
+    };
+    const dispatches: Dispatch[] = [];
+    const seenDispatch = new Set<string>();
+
+    function addDispatch(d: Dispatch) {
+      const key = `${d.channelType}::${d.value}`;
+      if (seenDispatch.has(key)) return;
+      seenDispatch.add(key);
+      dispatches.push(d);
+    }
+
+    // 1. Rule-level overrides (highest precedence).
     if (r.webhook_url?.trim()) {
-      const ch = "webhook";
-      if (await shouldSendChannel(tenantId, r.id, ch, now)) {
-        await notifyGenericWebhook(r.webhook_url.trim(), payload);
-        await logNotification(tenantId, r.id, ch, now);
-        notificationsSent++;
-      } else {
-        skippedDedupe++;
-      }
+      addDispatch({
+        channelType: "webhook",
+        value: r.webhook_url.trim(),
+        reason: "rule:webhook_url",
+      });
     }
-
     if (r.slack_webhook_url?.trim()) {
-      const ch = "slack";
-      if (await shouldSendChannel(tenantId, r.id, ch, now)) {
-        await notifySlackIncomingWebhook(
-          r.slack_webhook_url.trim(),
-          `🔥 ${summary}`,
-        );
-        await logNotification(tenantId, r.id, ch, now);
-        notificationsSent++;
-      } else {
-        skippedDedupe++;
-      }
+      addDispatch({
+        channelType: "slack",
+        value: r.slack_webhook_url.trim(),
+        reason: "rule:slack_webhook_url",
+      });
+    }
+    if (r.pagerduty_routing_key?.trim()) {
+      addDispatch({
+        channelType: "pagerduty",
+        value: r.pagerduty_routing_key.trim(),
+        reason: "rule:pagerduty_routing_key",
+      });
     }
 
-    if (r.pagerduty_routing_key?.trim()) {
-      const ch = "pagerduty";
-      if (await shouldSendChannel(tenantId, r.id, ch, now)) {
-        const dedupKey = `pulse-${tenantId}-rule${r.id}-${Math.floor(now / win)}`;
-        await notifyPagerDutyTrigger(
-          r.pagerduty_routing_key.trim(),
-          summary,
-          dedupKey,
-        );
-        await logNotification(tenantId, r.id, ch, now);
-        notificationsSent++;
-      } else {
+    // 2. Resolver targets — per-market and team routes via alert_routes table.
+    const ownerTeamRow = await queryGet<{ owner_team: string | null }>(
+      `SELECT owner_team FROM service_catalog WHERE service_name = ?`,
+      [r.service],
+    );
+    const ownerTeam = ownerTeamRow?.owner_team?.trim() || null;
+
+    const routedTargets = resolveRouteTargets(
+      {
+        ruleId: r.id,
+        ruleName: r.name,
+        serviceName: r.service,
+        ownerTeam,
+        severity,
+        breachedMarkets,
+      },
+      allRoutes,
+    );
+    for (const t of routedTargets) {
+      addDispatch({
+        channelType: t.channelType,
+        value: t.channelValue,
+        reason: t.reason,
+      });
+    }
+
+    // 3. Send each unique dispatch with per-target dedup.
+    for (const d of dispatches) {
+      // Channel key includes a short value tag so the dedup table tracks each
+      // distinct destination separately. 12 hex chars is plenty for collision
+      // avoidance within a single rule's group window.
+      const valueTag = simpleHash(d.value).slice(0, 12);
+      const channelKey = `${d.channelType}:${valueTag}`;
+      if (!(await shouldSendChannel(tenantId, r.id, channelKey, now))) {
         skippedDedupe++;
+        continue;
       }
+      try {
+        if (d.channelType === "webhook") {
+          await notifyGenericWebhook(d.value, payload);
+        } else if (d.channelType === "slack") {
+          await notifySlackIncomingWebhook(d.value, `🔥 ${summary}`);
+        } else if (d.channelType === "pagerduty") {
+          const dedupKey = `pulse-${tenantId}-rule${r.id}-${valueTag}-${Math.floor(now / win)}`;
+          await notifyPagerDutyTrigger(d.value, summary, dedupKey);
+        }
+        // 'email' is reserved for a future notifier; skip silently for now.
+      } catch {
+        /* swallow per-target errors so one bad target doesn't kill the loop */
+      }
+      await logNotification(tenantId, r.id, channelKey, now);
+      notificationsSent++;
     }
   }
 

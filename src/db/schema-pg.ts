@@ -173,7 +173,26 @@ export const alertRules = pgTable("alert_rules", {
   product: text("product"),
   marketScope: text("market_scope"),
   environment: text("environment").notNull().default("prod"),
+  severity: text("severity").notNull().default("warning"),
 });
+
+export const alertRoutes = pgTable(
+  "alert_routes",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    scopeType: text("scope_type").notNull(),
+    scopeValue: text("scope_value"),
+    channelType: text("channel_type").notNull(),
+    channelValue: text("channel_value").notNull(),
+    severityMin: text("severity_min").notNull().default("warning"),
+    enabled: integer("enabled").notNull().default(1),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (t) => [
+    index("alert_routes_scope_lookup_idx").on(t.scopeType, t.scopeValue),
+  ],
+);
 
 export const sloTargets = pgTable(
   "slo_targets",
