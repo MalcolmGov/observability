@@ -66,11 +66,7 @@ export function ServiceMapView() {
         </button>
       </header>
 
-      {error ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="pulse-alert-error">{error}</div> : null}
 
       <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-6 shadow-lg shadow-slate-950/25">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">

@@ -144,11 +144,8 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
   if (error && !data) {
     return (
       <div className="px-4 py-10 sm:px-8">
-        <p className="text-sm text-red-300">{error}</p>
-        <Link
-          href="/traces"
-          className="mt-4 inline-block text-sm text-indigo-400 hover:text-indigo-300"
-        >
+        <div className="pulse-alert-error">{error}</div>
+        <Link href="/traces" className="pulse-link mt-4 inline-block text-sm">
           ← Back to traces
         </Link>
       </div>
@@ -183,7 +180,10 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
             {format(new Date(data.startTs), "PPpp")} ·{" "}
             <span className="tabular-nums">{data.durationMs} ms</span> ·{" "}
             {data.spans.length} spans · critical path{" "}
-            <span className="tabular-nums text-amber-200/90">
+            <span
+              className="pulse-mono-num"
+              style={{ color: "var(--pulse-status-warning-fg)" }}
+            >
               {criticalIds.size}
             </span>{" "}
             spans
@@ -205,7 +205,7 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
           <button
             type="button"
             onClick={() => void load("full")}
-            className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-400"
+            className="pulse-btn-primary text-xs"
           >
             Refresh
           </button>
@@ -309,14 +309,17 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
               </div>
               <div className="relative min-h-9 min-w-0 flex-1 rounded-lg bg-slate-950/45">
                 <div
-                  className={`absolute top-1/2 h-5 -translate-y-1/2 rounded ${
-                    s.status === "error"
-                      ? "bg-red-500/70"
-                      : s.kind === "client"
-                        ? "bg-amber-400/70"
-                        : "bg-indigo-400/80"
-                  } ${criticalIds.has(s.spanId) ? "ring-2 ring-amber-300/95 ring-offset-2 ring-offset-slate-950" : ""}`}
+                  className={`pulse-transition absolute top-1/2 h-5 -translate-y-1/2 rounded ${criticalIds.has(s.spanId) ? "ring-2 ring-offset-2 ring-offset-slate-950" : ""}`}
                   style={{
+                    background:
+                      s.status === "error"
+                        ? "color-mix(in srgb, var(--pulse-status-danger-fg) 75%, transparent)"
+                        : s.kind === "client"
+                          ? "color-mix(in srgb, var(--pulse-status-warning-fg) 75%, transparent)"
+                          : "color-mix(in srgb, var(--pulse-status-info-fg) 80%, transparent)",
+                    boxShadow: criticalIds.has(s.spanId)
+                      ? "0 0 0 2px var(--pulse-status-warning-border)"
+                      : undefined,
                     left: `${left}%`,
                     width: `${Math.max(width, 0.35)}%`,
                   }}

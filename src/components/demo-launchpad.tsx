@@ -44,16 +44,14 @@ export function DemoLaunchpad({
   }, []);
 
   return (
-    <section className="pulse-demo-launchpad overflow-hidden rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-950/40 via-slate-950/80 to-slate-950/90 p-5 shadow-xl shadow-indigo-950/20">
+    <section className="pulse-card-soft pulse-fade-in overflow-hidden p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-xl space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-300/90">
-            Demo showroom
-          </div>
-          <h2 className="text-lg font-semibold text-zinc-50">
+          <div className="pulse-eyebrow text-indigo-300/80">Demo showroom</div>
+          <h2 className="pulse-h3">
             Load a realistic retail checkout scenario
           </h2>
-          <p className="text-sm leading-relaxed text-zinc-400">
+          <p className="pulse-body text-zinc-400">
             Three services ({DEMO_SERVICES.checkout},{" "}
             {DEMO_SERVICES.inventory}, {DEMO_SERVICES.payment}), golden-signal
             metrics, correlated logs, happy-path and failing PSP traces, SLO
@@ -71,11 +69,11 @@ export function DemoLaunchpad({
             type="button"
             disabled={loading}
             onClick={() => void onSeed()}
-            className="rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="pulse-btn-primary px-5 py-3"
           >
             {loading ? "Seeding…" : "Load demo scenario"}
           </button>
-          <p className="text-[11px] text-zinc-600 sm:max-w-[200px] lg:max-w-none">
+          <p className="pulse-caption sm:max-w-[200px] lg:max-w-none">
             Production: set{" "}
             <code className="text-zinc-500">ALLOW_DEMO_SEED=1</code> to enable.
           </p>
@@ -83,11 +81,14 @@ export function DemoLaunchpad({
       </div>
 
       {seedError ? (
-        <p className="mt-4 text-sm text-red-300">{seedError}</p>
+        <p className="pulse-alert-error mt-4">{seedError}</p>
       ) : null}
 
       {demoMeta?.ok && demoMeta.inserted ? (
-        <p className="mt-4 text-[12px] text-emerald-400/90">
+        <p
+          className="mt-4 text-[12px]"
+          style={{ color: "var(--pulse-status-success-fg)" }}
+        >
           Last seed: v{demoMeta.scenarioVersion ?? "?"} —{" "}
           {demoMeta.inserted.metricPoints.toLocaleString()} metric points,{" "}
           {demoMeta.inserted.logEntries} logs, {demoMeta.inserted.traceSpans}{" "}
@@ -144,7 +145,8 @@ export function DemoLaunchpad({
           {traceFailed ? (
             <Link
               href={demoTraceDetailUrl(traceFailed)}
-              className="rounded-lg border border-red-500/30 bg-red-950/25 px-3 py-1.5 text-xs font-medium text-red-100 hover:bg-red-950/40"
+              className="pulse-chip pulse-chip-danger pulse-transition"
+              style={{ padding: "0.375rem 0.75rem" }}
             >
               Failed PSP trace
             </Link>
@@ -152,10 +154,8 @@ export function DemoLaunchpad({
         </div>
       )}
 
-      <div className="mt-6 border-t border-white/10 pt-4">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-          NL query starters
-        </div>
+      <div className="mt-6 border-t border-[var(--pulse-border-default)] pt-4">
+        <div className="pulse-eyebrow">NL query starters</div>
         <p className="mt-1 text-[11px] text-zinc-600">
           Paste into “Natural language query” on Logs, Metrics, or Traces — copies to clipboard.
         </p>
@@ -180,10 +180,12 @@ function LinkCard(props: { title: string; desc: string; href: string }) {
   return (
     <Link
       href={props.href}
-      className="rounded-xl border border-white/10 bg-slate-950/25 px-4 py-3 transition hover:border-indigo-500/35 hover:bg-indigo-950/20"
+      className="pulse-transition group rounded-xl border border-[var(--pulse-border-default)] bg-slate-950/25 px-4 py-3 hover:-translate-y-px hover:border-indigo-500/40 hover:bg-indigo-950/20"
     >
-      <div className="text-xs font-semibold text-zinc-100">{props.title}</div>
-      <div className="mt-1 text-[11px] leading-snug text-zinc-500">{props.desc}</div>
+      <div className="pulse-title text-zinc-100 group-hover:text-indigo-100">
+        {props.title}
+      </div>
+      <div className="pulse-caption mt-1">{props.desc}</div>
     </Link>
   );
 }

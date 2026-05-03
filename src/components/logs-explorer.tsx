@@ -471,11 +471,7 @@ export function LogsExplorer() {
         </div>
       </header>
 
-      {error ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="pulse-alert-error">{error}</div> : null}
 
       <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-slate-950/50 p-4 shadow-lg shadow-slate-950/25">
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
@@ -580,7 +576,10 @@ export function LogsExplorer() {
         </div>
         {attrKeyInput.trim().length > 0 &&
         !LOG_ATTR_KEY_RE.test(attrKeyInput.trim()) ? (
-          <p className="text-[11px] text-amber-200/90">
+          <p
+            className="text-[11px]"
+            style={{ color: "var(--pulse-status-warning-fg)" }}
+          >
             Attribute key must match{" "}
             <code className="text-zinc-500">a-zA-Z</code> start, up to 64 chars
             of <code className="text-zinc-500">[a-zA-Z0-9_.-]</code> — filter not
@@ -733,16 +732,22 @@ export function LogsExplorer() {
                       <div className="text-zinc-500">
                         {format(new Date(l.ts), "HH:mm:ss")}
                       </div>
-                      <div
-                        className={
-                          l.level === "error"
-                            ? "text-red-400"
-                            : l.level === "warn"
-                              ? "text-amber-300"
-                              : "text-emerald-400"
-                        }
-                      >
-                        {l.level}
+                      <div className="flex items-center">
+                        <span
+                          className={`pulse-loglevel ${
+                            l.level === "error"
+                              ? "pulse-loglevel-error"
+                              : l.level === "warn"
+                                ? "pulse-loglevel-warn"
+                                : l.level === "info"
+                                  ? "pulse-loglevel-info"
+                                  : l.level === "debug"
+                                    ? "pulse-loglevel-debug"
+                                    : "pulse-loglevel-trace"
+                          }`}
+                        >
+                          {l.level}
+                        </span>
                       </div>
                       <div className="truncate text-zinc-200">{l.message}</div>
                       <div className="flex items-center justify-center">

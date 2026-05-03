@@ -146,19 +146,27 @@ export function NlQueryPanel({
               type="button"
               disabled={busy || input.trim().length < 3}
               onClick={() => void run()}
-              className="rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="pulse-btn-primary text-xs"
             >
               {busy ? "Thinking…" : "Translate & apply"}
             </button>
           </div>
           {error ? (
-            <p className="text-xs text-red-300/95">{error}</p>
+            <p
+              className="text-xs"
+              style={{ color: "var(--pulse-status-danger-fg)" }}
+            >
+              {error}
+            </p>
           ) : null}
           {lastReasoning ? (
-            <p className="text-[11px] leading-snug text-zinc-500">{lastReasoning}</p>
+            <p className="pulse-caption">{lastReasoning}</p>
           ) : null}
           {lastWarnings?.length ? (
-            <ul className="list-inside list-disc text-[11px] text-amber-200/90">
+            <ul
+              className="list-inside list-disc text-[11px]"
+              style={{ color: "var(--pulse-status-warning-fg)" }}
+            >
               {lastWarnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}

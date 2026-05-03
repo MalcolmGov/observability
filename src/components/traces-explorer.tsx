@@ -268,11 +268,7 @@ export function TracesExplorer() {
         </div>
       </header>
 
-      {error ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="pulse-alert-error">{error}</div> : null}
 
       <NlQueryPanel page="traces" onApplyTraces={applyNlTraces} />
 
@@ -313,9 +309,13 @@ export function TracesExplorer() {
                 </div>
                 <div className="text-zinc-300">{t.spanCount}</div>
                 <div
-                  className={
-                    t.errorCount > 0 ? "text-red-400" : "text-emerald-400"
-                  }
+                  className="pulse-mono-num font-medium"
+                  style={{
+                    color:
+                      t.errorCount > 0
+                        ? "var(--pulse-status-danger-fg)"
+                        : "var(--pulse-status-success-fg)",
+                  }}
                 >
                   {t.errorCount}
                 </div>
