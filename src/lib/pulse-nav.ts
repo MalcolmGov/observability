@@ -32,6 +32,12 @@ export const PULSE_PRIMARY_NAV: readonly PulseNavItem[] = [
     keywords: "apps matrix regions consumer merchant agent",
   },
   {
+    href: "/explore",
+    label: "Explore",
+    desc: "Logs, metrics & traces",
+    keywords: "grafana promql inspector live tail query",
+  },
+  {
     href: "/metrics",
     label: "Metrics",
     desc: "Explorer & ranges",

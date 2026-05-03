@@ -7,6 +7,7 @@ import { Fragment } from "react";
 const SEGMENT_LABELS: Record<string, string> = {
   briefing: "Briefing",
   catalog: "App catalog",
+  explore: "Explore",
   services: "Services",
   metrics: "Metrics",
   logs: "Logs",

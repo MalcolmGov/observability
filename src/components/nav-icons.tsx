@@ -31,6 +31,20 @@ export function IconCatalog(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+/** Unified Explore — logs / metrics / traces */
+export function IconExplore(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <circle cx="12" cy="12" r="9" strokeLinecap="round" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16.24 7.76l-5.5 2.4-2.4 5.5 5.5-2.4 2.4-5.5z"
+      />
+    </svg>
+  );
+}
+
 export function IconMetrics(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>

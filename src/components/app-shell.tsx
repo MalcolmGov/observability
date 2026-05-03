@@ -2,17 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   CommandPalette,
   useCommandPaletteShortcut,
 } from "@/components/command-palette";
+import {
+  KeyboardShortcutsModal,
+  useKeyboardShortcutsShortcut,
+} from "@/components/keyboard-shortcuts-modal";
 import { PageBreadcrumbs } from "@/components/page-breadcrumbs";
 import {
   IconAlerts,
   IconBriefing,
   IconCatalog,
   IconDashboard,
+  IconExplore,
   IconLogs,
   IconMap,
   IconMetrics,
@@ -29,6 +34,7 @@ const NAV_ICONS = [
   IconDashboard,
   IconServices,
   IconCatalog,
+  IconExplore,
   IconMetrics,
   IconLogs,
   IconMap,
@@ -83,10 +89,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const sectionLabel = topBarSectionLabel(pathname);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
   useCommandPaletteShortcut(setPaletteOpen);
+  useKeyboardShortcutsShortcut(setShortcutsOpen);
 
   return (
     <div className="flex min-h-full">
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -207,6 +217,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(true)}
+                className="hidden rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[11px] text-zinc-500 transition hover:border-white/[0.12] hover:text-zinc-300 lg:block"
+                title="Keyboard shortcuts"
+              >
+                <kbd className="rounded border border-white/[0.08] bg-slate-950/80 px-1 font-mono text-[10px]">
+                  ?
+                </kbd>
+              </button>
               <button
                 type="button"
                 onClick={() => setPaletteOpen(true)}
