@@ -38,6 +38,11 @@ function mergeMarkets(a: string[], b: string[]): string[] {
  *
  * When merged `markets_active` grows past one distinct market, `scope` flips **market_local → shared**
  * (a previously KE-only row is promoted if NG traffic appears).
+ *
+ * Discovery edge case: if the most recent upsert left `markets_active = []` (e.g. first span carried
+ * `market = unknown`), we clear the debounce timer for that service so the very next span — which is
+ * presumably the first one carrying a real market tag — bypasses the 60s gate and lands immediately.
+ * Once a real market is recorded, normal debouncing resumes.
  */
 export function scheduleCatalogUpsertFromTraceRows(rows: TraceRow[]): void {
   if (rows.length === 0) return;
@@ -87,7 +92,7 @@ async function upsertOneService(serviceName: string): Promise<void> {
 
   if (isPostgres()) {
     const pool = await getPgPool();
-    await pool.query(
+    const result = await pool.query<{ markets_active: string[] }>(
       `
       INSERT INTO service_catalog (
         service_name, display_name, product, scope, markets_active,
@@ -120,9 +125,15 @@ async function upsertOneService(serviceName: string): Promise<void> {
           ELSE 'market_local'
         END,
         updated_at = EXCLUDED.updated_at
+      RETURNING markets_active
       `,
       [serviceName, product, scope, markets, now],
     );
+    const finalMarkets = result.rows[0]?.markets_active ?? [];
+    if (finalMarkets.length === 0) {
+      // Discovery still incomplete — clear timer so the next span bypasses the debounce.
+      lastUpsertMsByService.delete(serviceName);
+    }
     return;
   }
 
@@ -159,15 +170,19 @@ async function upsertOneService(serviceName: string): Promise<void> {
        WHERE service_name = ?`,
       [marketsJson, mergedScope, now, serviceName],
     );
-    return;
+  } else {
+    await queryRun(
+      `INSERT INTO service_catalog (
+        service_name, display_name, product, scope, markets_active,
+        tier, owner_team, oncall_slack, oncall_pd_key, repo_url, runbook_url,
+        tags, created_at, updated_at, enabled
+      ) VALUES (?, NULL, ?, ?, ?, 3, NULL, NULL, NULL, NULL, NULL, '{}', ?, ?, 1)`,
+      [serviceName, product, mergedScope, marketsJson, now, now],
+    );
   }
 
-  await queryRun(
-    `INSERT INTO service_catalog (
-      service_name, display_name, product, scope, markets_active,
-      tier, owner_team, oncall_slack, oncall_pd_key, repo_url, runbook_url,
-      tags, created_at, updated_at, enabled
-    ) VALUES (?, NULL, ?, ?, ?, 3, NULL, NULL, NULL, NULL, NULL, '{}', ?, ?, 1)`,
-    [serviceName, product, mergedScope, marketsJson, now, now],
-  );
+  if (mergedMarkets.length === 0) {
+    // Discovery still incomplete — clear timer so the next span bypasses the debounce.
+    lastUpsertMsByService.delete(serviceName);
+  }
 }
