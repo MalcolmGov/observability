@@ -27,6 +27,7 @@ type RuleDbRow = {
   product: string | null;
   market_scope: string | null;
   environment: string | null;
+  severity: string | null;
 };
 
 function mapRule(r: RuleDbRow) {
@@ -46,6 +47,7 @@ function mapRule(r: RuleDbRow) {
     product: r.product ?? null,
     marketScope: r.market_scope ?? null,
     environment: r.environment ?? "prod",
+    severity: (r.severity ?? "warning") as "info" | "warning" | "critical",
   };
 }
 
@@ -53,7 +55,7 @@ export async function GET() {
   const rows = await queryAll<RuleDbRow>(
     `SELECT id, name, enabled, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment
+            product, market_scope, environment, severity
      FROM alert_rules ORDER BY id ASC`,
     [],
   );
@@ -81,6 +83,7 @@ const postSchema = z.object({
     .union([z.string(), z.array(z.string()), z.null()])
     .optional(),
   environment: z.string().min(1).max(64).optional(),
+  severity: z.enum(["info", "warning", "critical"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -124,11 +127,12 @@ export async function POST(req: Request) {
       : null;
   const product = p.product?.trim() ? p.product.trim() : null;
   const environment = p.environment?.trim() ?? "prod";
+  const severity = p.severity ?? "warning";
 
   let id: number;
   if (isPostgres()) {
     const row = await queryGet<{ id: number }>(
-      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment, severity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       [
         p.name,
         p.enabled === false ? 0 : 1,
@@ -144,12 +148,13 @@ export async function POST(req: Request) {
         product,
         marketScopeCanonical,
         environment,
+        severity,
       ],
     );
     id = Number(row?.id);
   } else {
     await queryRun(
-      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment, severity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         p.name,
         p.enabled === false ? 0 : 1,
@@ -165,6 +170,7 @@ export async function POST(req: Request) {
         product,
         marketScopeCanonical,
         environment,
+        severity,
       ],
     );
     const lid = await queryGet<{ id: number }>(
@@ -177,7 +183,7 @@ export async function POST(req: Request) {
   const row = await queryGet<RuleDbRow>(
     `SELECT id, name, enabled, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment
+            product, market_scope, environment, severity
      FROM alert_rules WHERE id = ?`,
     [id],
   );
@@ -213,6 +219,7 @@ const patchSchema = z
       .union([z.string(), z.array(z.string()), z.null()])
       .optional(),
     environment: z.string().min(1).max(64).optional(),
+    severity: z.enum(["info", "warning", "critical"]).optional(),
   })
   .refine(
     (d) =>
@@ -222,7 +229,8 @@ const patchSchema = z
       d.pagerduty_routing_key !== undefined ||
       d.product !== undefined ||
       d.market_scope !== undefined ||
-      d.environment !== undefined,
+      d.environment !== undefined ||
+      d.severity !== undefined,
     { message: "At least one field to update is required" },
   );
 
@@ -298,6 +306,10 @@ export async function PATCH(req: Request) {
     assignments.push("environment = ?");
     params.push(parsed.data.environment.trim() || "prod");
   }
+  if (parsed.data.severity !== undefined) {
+    assignments.push("severity = ?");
+    params.push(parsed.data.severity);
+  }
 
   if (assignments.length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
@@ -312,7 +324,7 @@ export async function PATCH(req: Request) {
   const row = await queryGet<RuleDbRow>(
     `SELECT id, name, enabled, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment
+            product, market_scope, environment, severity
      FROM alert_rules WHERE id = ?`,
     [id],
   );

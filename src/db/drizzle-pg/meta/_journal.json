@@ -71,6 +71,13 @@
       "when": 1748208000000,
       "tag": "0009_service_catalog_strip_unknown_market",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1748294400000,
+      "tag": "0010_alert_routes_and_severity",
+      "breakpoints": true
     }
   ]
 }
