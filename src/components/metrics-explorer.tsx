@@ -493,7 +493,7 @@ export function MetricsExplorer() {
             type="button"
             onClick={() => void seedDemo()}
             disabled={loading}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:opacity-50"
+            className="pulse-btn-primary disabled:opacity-50"
           >
             Load demo data
           </button>
@@ -568,9 +568,9 @@ export function MetricsExplorer() {
                   key={k}
                   type="button"
                   onClick={() => setRangeKey(k)}
-                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium ${
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition ${
                     rangeKey === k
-                      ? "bg-indigo-500/25 text-indigo-100 ring-1 ring-indigo-400/40"
+                      ? "bg-teal-500/20 text-teal-200 ring-1 ring-teal-500/30"
                       : "text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
@@ -590,34 +590,12 @@ export function MetricsExplorer() {
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="fillPrimary" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="0%"
-                        stopColor={pulseChartSeries.indigo}
-                        stopOpacity={0.35}
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor={pulseChartSeries.indigo}
-                        stopOpacity={0}
-                      />
+                      <stop offset="0%" stopColor="#06d6c7" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#06d6c7" stopOpacity={0} />
                     </linearGradient>
-                    <linearGradient
-                      id="fillSecondary"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor={pulseChartSeries.emerald}
-                        stopOpacity={0.25}
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor={pulseChartSeries.emerald}
-                        stopOpacity={0}
-                      />
+                    <linearGradient id="fillSecondary" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#38bdf8" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} />
@@ -634,7 +612,7 @@ export function MetricsExplorer() {
                   <Area
                     type="monotone"
                     dataKey={metric}
-                    stroke={pulseChartSeries.indigo}
+                    stroke="#06d6c7"
                     strokeWidth={2}
                     fillOpacity={1}
                     fill="url(#fillPrimary)"
@@ -643,7 +621,7 @@ export function MetricsExplorer() {
                     <Area
                       type="monotone"
                       dataKey={compareMetric}
-                      stroke={pulseChartSeries.emerald}
+                      stroke="#38bdf8"
                       strokeWidth={2}
                       fillOpacity={1}
                       fill="url(#fillSecondary)"
@@ -665,6 +643,28 @@ export function MetricsExplorer() {
             )}
           </div>
 
+          {/* Stat summary bar */}
+          {series.length > 0 && (() => {
+            const vals = series.map(p => p.value).sort((a, b) => a - b);
+            const mn = vals[0] ?? 0;
+            const mx = vals[vals.length - 1] ?? 0;
+            const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+            const p95idx = Math.floor(vals.length * 0.95);
+            const p95 = vals[p95idx] ?? mx;
+            const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(2)}s` : `${v.toFixed(1)}`;
+            const stats = [['min', fmt(mn)], ['avg', fmt(avg)], ['p95', fmt(p95)], ['max', fmt(mx)]] as const;
+            return (
+              <div className="mt-4 grid grid-cols-4 gap-2 rounded-xl border border-white/[0.06] bg-slate-950/40 p-3">
+                {stats.map(([label, val]) => (
+                  <div key={label} className="text-center">
+                    <div className="text-[10px] uppercase tracking-widest text-zinc-600">{label}</div>
+                    <div className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-zinc-100">{val}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           <div className="mt-4 border-t border-white/10 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Label cardinality
@@ -684,7 +684,7 @@ export function MetricsExplorer() {
                     key={row.key}
                     className="flex flex-wrap gap-x-2 gap-y-0.5 rounded-lg bg-slate-950/30 px-2 py-1"
                   >
-                    <span className="font-mono text-indigo-200">{row.key}</span>
+                    <span className="font-mono text-teal-300">{row.key}</span>
                     <span className="text-zinc-500">
                       · {row.cardinality} values
                     </span>

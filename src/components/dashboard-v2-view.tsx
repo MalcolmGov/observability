@@ -2,15 +2,11 @@
 
 import { format } from "date-fns";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { traceIdFromAttributes } from "@/lib/trace-id";
 import type { DemoSeedApiResponse } from "@/lib/demo-scenario";
-import {
-  DemoLaunchpad,
-  persistDemoSeed,
-  readStoredDemoSeed,
-} from "@/components/demo-launchpad";
+import { persistDemoSeed, readStoredDemoSeed } from "@/components/demo-launchpad";
 import {
   LatencyPercentileHeatmap,
   SloGaugeArc,
@@ -134,6 +130,42 @@ function healthDot(health: OverviewPayload["services"][0]["health"]) {
   return "bg-emerald-400 shadow shadow-emerald-400/25";
 }
 
+/** Tiny inline SVG sparkline — no external deps */
+function MiniSparkline({
+  data,
+  color = "#06d6c7",
+  dangerColor = "#fb7185",
+  danger = false,
+  w = 56,
+  h = 20,
+}: {
+  data: number[];
+  color?: string;
+  dangerColor?: string;
+  danger?: boolean;
+  w?: number;
+  h?: number;
+}) {
+  if (data.length < 2)
+    return <span className="inline-block animate-pulse rounded bg-white/5" style={{ width: w, height: h }} />;
+  const max = Math.max(...data, 0.0001);
+  const min = Math.min(...data);
+  const range = max - min || max;
+  const pts = data
+    .map((v, i) => {
+      const x = ((i / (data.length - 1)) * w).toFixed(1);
+      const y = (h - ((v - min) / range) * (h - 4) - 2).toFixed(1);
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const stroke = danger ? dangerColor : color;
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
+    </svg>
+  );
+}
+
 export function DashboardV2View() {
   const [rangeMs, setRangeMs] = useState<number>(RANGE_PRESETS[1].ms);
   const [data, setData] = useState<OverviewPayload | null>(null);
@@ -165,22 +197,18 @@ export function DashboardV2View() {
     null,
   );
   const [demoSeedError, setDemoSeedError] = useState<string | null>(null);
+  const [serviceSparklines, setServiceSparklines] = useState<Record<string, number[]>>({});
+  const [prevSeriesLatency, setPrevSeriesLatency] = useState<{ label: string; value: number }[]>([]);
+  const [prevSeriesRpm, setPrevSeriesRpm] = useState<{ label: string; value: number }[]>([]);
+  const [showComparison, setShowComparison] = useState(false);
+  const logListRef = useRef<HTMLDivElement>(null);
+  const prevLogCountRef = useRef(0);
 
   useEffect(() => {
     const stored = readStoredDemoSeed();
     if (stored?.ok) setDemoSeedMeta(stored);
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash !== "#demo-showroom") return;
-    requestAnimationFrame(() => {
-      document.getElementById("demo-showroom")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-  }, []);
 
   useEffect(() => {
     setSloTargetSuccess(readInitialSloTarget());
@@ -214,6 +242,26 @@ export function DashboardV2View() {
         if (apmRes.ok) {
           const aj = (await apmRes.json()) as { services: ApmServiceRow[] };
           setApmServices(aj.services);
+          // Fetch p95 sparklines for each service (up to 8 parallel)
+          const svcs = aj.services.slice(0, 8);
+          const end2 = Date.now();
+          const start2 = end2 - rangeMs;
+          const bucketMs2 = bucketForWindow(rangeMs);
+          const sparkResults = await Promise.all(
+            svcs.map(async (s) => {
+              try {
+                const r = await fetch(
+                  `/api/v1/query/metrics?name=${encodeURIComponent("http.server.request_duration_ms")}&service=${encodeURIComponent(s.service)}&start=${start2}&end=${end2}&bucketMs=${bucketMs2}`
+                );
+                if (!r.ok) return [s.service, []] as [string, number[]];
+                const j = (await r.json()) as { series: { t: number; value: number }[] };
+                return [s.service, j.series.map((p) => p.value)] as [string, number[]];
+              } catch {
+                return [s.service, []] as [string, number[]];
+              }
+            })
+          );
+          setServiceSparklines(Object.fromEntries(sparkResults));
         } else {
           setApmServices([]);
         }
@@ -274,17 +322,25 @@ export function DashboardV2View() {
               series: { t: number; value: number }[];
             };
             setSeriesLatency(
-              ja.series.map((p) => ({
-                label: labelFmt(p.t),
-                value: p.value,
-              })),
+              ja.series.map((p) => ({ label: labelFmt(p.t), value: p.value })),
             );
             setSeriesRpm(
-              jb.series.map((p) => ({
-                label: labelFmt(p.t),
-                value: p.value,
-              })),
+              jb.series.map((p) => ({ label: labelFmt(p.t), value: p.value })),
             );
+
+            // Previous-period fetch (runs in background, doesn't block render)
+            const prevEnd = start;
+            const prevStart = start - rangeMs;
+            const qp = (name: string) =>
+              `/api/v1/query/metrics?name=${encodeURIComponent(name)}&service=${encodeURIComponent(svc)}&start=${prevStart}&end=${prevEnd}&bucketMs=${bucketMs}`;
+            void Promise.all([fetch(qp("http.server.request_duration_ms")), fetch(qp("http.server.requests"))]).then(
+              async ([pa, pb]) => {
+                const dpa = pa.ok ? ((await pa.json()) as { series: { t: number; value: number }[] }).series : [];
+                const dpb = pb.ok ? ((await pb.json()) as { series: { t: number; value: number }[] }).series : [];
+                setPrevSeriesLatency(dpa.map((p) => ({ label: labelFmt(p.t), value: p.value })));
+                setPrevSeriesRpm(dpb.map((p) => ({ label: labelFmt(p.t), value: p.value })));
+              }
+            ).catch(() => {});
           }
 
           const pick =
@@ -372,6 +428,28 @@ export function DashboardV2View() {
     return p?.label ?? `${Math.round(rangeMs / 60000)}m`;
   }, [rangeMs]);
 
+  // Log volume heatmap — 48 buckets, severity split
+  const logHeatmap = useMemo(() => {
+    if (!logs.length) return [];
+    const N = 48;
+    const now = Date.now();
+    const winStart = now - rangeMs;
+    const bucketMs = rangeMs / N;
+    const buckets = Array.from({ length: N }, (_, i) => ({
+      t: winStart + i * bucketMs,
+      info: 0, warn: 0, error: 0, total: 0,
+    }));
+    for (const log of logs) {
+      const i = Math.min(N - 1, Math.max(0, Math.floor((log.ts - winStart) / bucketMs)));
+      const lvl = log.level?.toLowerCase() ?? "info";
+      if (lvl === "error" || lvl === "fatal" || lvl === "critical") buckets[i].error++;
+      else if (lvl === "warn" || lvl === "warning") buckets[i].warn++;
+      else buckets[i].info++;
+      buckets[i].total++;
+    }
+    return buckets;
+  }, [logs, rangeMs]);
+
   const kpis = useMemo(() => {
     if (!data) return [];
     const t = data.totals;
@@ -426,6 +504,7 @@ export function DashboardV2View() {
         targetPct: target * 100,
         actualSuccessPct: null as number | null,
         budgetRemainingPct: null as number | null,
+        burnRate: null as number | null,
         status: "nodata" as const,
       };
     }
@@ -445,6 +524,12 @@ export function DashboardV2View() {
         : success >= target - 0.002
           ? ("warn" as const)
           : ("burn" as const);
+    const allowedErrorFraction = 1 - target;
+    const actualErrorFraction = 1 - success;
+    const burnRate =
+      allowedErrorFraction > 0
+        ? Math.max(0, actualErrorFraction / allowedErrorFraction)
+        : 0;
     return {
       service: svc,
       targetPct: target * 100,
@@ -453,8 +538,15 @@ export function DashboardV2View() {
       status,
       requests: row.requests,
       errors: row.errorCount,
+      burnRate,
     };
   }, [apmServices, chartSvc, serverSloTarget, sloTargetSuccess]);
+
+  // Live log tail — scroll to top (newest-first) when new logs arrive
+  useEffect(() => {
+    if (!live || !logListRef.current) return;
+    logListRef.current.scrollTop = 0;
+  }, [logs, live]);
 
   async function runDemoSeed() {
     setDemoSeedError(null);
@@ -515,15 +607,15 @@ export function DashboardV2View() {
   }
 
   return (
-    <div className="pulse-page gap-6 py-6 sm:py-8">
+    <div className="pulse-page pulse-page-transition gap-6 py-6 sm:py-8">
       <header className="pulse-page-head border-white/[0.06] pb-5">
         <div>
-          <h1 className="pulse-dashboard-title bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-xl font-semibold tracking-tight text-transparent sm:text-[1.65rem]">
-            Command center
+          <h1 className="bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-[1.65rem] font-bold tracking-tight text-transparent" style={{ letterSpacing: '-0.03em' }}>
+            Command Center
           </h1>
           <p className="pulse-lead">
-            KPIs, golden signals, service health, dependencies, and live logs in
-            one place.
+            KPIs, golden signals, service health, dependencies, and live logs —
+            everything in one place.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -546,7 +638,7 @@ export function DashboardV2View() {
               type="checkbox"
               checked={live}
               onChange={(e) => setLive(e.target.checked)}
-              className="rounded border-white/20 text-violet-500 focus:ring-violet-500/30"
+              className="rounded border-white/20 text-cyan-500 focus:ring-cyan-500/30"
             />
             <span className={live ? "text-emerald-300" : ""}>Live</span>
           </label>
@@ -557,32 +649,65 @@ export function DashboardV2View() {
           >
             Refresh
           </button>
+          <button
+            type="button"
+            onClick={() => void runDemoSeed()}
+            disabled={loading}
+            className="pulse-btn-primary disabled:opacity-50"
+          >
+            {loading ? "Loading…" : "Load demo data"}
+          </button>
         </div>
       </header>
 
-      <div id="demo-showroom">
-        <DemoLaunchpad
-          loading={loading}
-          demoMeta={demoSeedMeta}
-          seedError={demoSeedError}
-          onSeed={runDemoSeed}
-        />
-      </div>
+      {/* ── Global no-data nudge ── */}
+      {!loading && (!data || data.services.length === 0) && !error && (
+        <div className="flex items-center gap-4 rounded-2xl border border-dashed px-5 py-4" style={{ borderColor: 'rgba(6,214,199,0.22)', background: 'rgba(6,214,199,0.04)' }}>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'rgba(6,214,199,0.12)' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06d6c7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-zinc-100">No telemetry ingested yet</p>
+            <p className="text-[11px] text-zinc-500">Load sample data to see golden signals, latency charts, and service health populate in real time.</p>
+          </div>
+          <button type="button" onClick={() => void runDemoSeed()} disabled={loading} className="shrink-0 pulse-btn-primary disabled:opacity-50">
+            Load demo data
+          </button>
+        </div>
+      )}
+
 
       {error ? (
         <div className="pulse-alert-error">{error}</div>
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((k) => (
-          <div key={k.label} className="pulse-card pulse-fade-in p-5">
-            <div className="pulse-eyebrow">{k.label}</div>
-            <div className="pulse-display-num mt-2">
-              {loading && !data ? "—" : k.value}
+        {kpis.map((k, i) => {
+          const stripes = [
+            "pulse-stat-stripe-emerald",
+            "pulse-stat-stripe-teal",
+            "pulse-stat-stripe-sky",
+            "pulse-stat-stripe-rose",
+          ] as const;
+          const stripe = stripes[i] ?? "pulse-stat-stripe-teal";
+          const icons = ["⬡", "◈", "≡", "⚡"] as const;
+          return (
+            <div key={k.label} className={`pulse-stat-card pulse-fade-in ${stripe} flex flex-col gap-1 p-5 pt-6`}>
+              <div className="flex items-start justify-between">
+                <div className="pulse-eyebrow">{k.label}</div>
+                <span className="text-[11px] text-zinc-700">{icons[i]}</span>
+              </div>
+              <div className="pulse-display-num mt-1">
+                {loading && !data ? (
+                  <span className="inline-block h-8 w-20 rounded-lg pulse-skeleton" />
+                ) : (
+                  k.value
+                )}
+              </div>
+              <div className="pulse-caption">{k.hint}</div>
             </div>
-            <div className="pulse-caption mt-1">{k.hint}</div>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
@@ -602,14 +727,10 @@ export function DashboardV2View() {
                 : undefined
           }
         >
-          <h2 className="text-sm font-semibold text-white">
-            SLO snapshot
-          </h2>
+          <h2 className="pulse-h3">SLO Snapshot</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            Rolling success target (trace root errors) vs. budget remaining.{" "}
-            <Link href="/services" className="pulse-link text-[11px]">
-              Services
-            </Link>
+            Rolling success target vs. error budget remaining.{" "}
+            <Link href="/services" className="pulse-link text-[11px]">Services</Link>
           </p>
           <label className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
             <span className="shrink-0">SLO target (browser)</span>
@@ -734,6 +855,40 @@ export function DashboardV2View() {
                 {sloInsight.requests === 1 ? "" : "s"} (
                 {sloInsight.errors} error roots).
               </div>
+
+              {/* ── Burn Rate Gauge ── */}
+              {sloInsight.burnRate != null && (
+                <div className="mt-3 rounded-xl border border-white/[0.06] bg-slate-950/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-400">Burn rate</span>
+                    <span className={`font-mono text-sm font-bold tabular-nums ${
+                      sloInsight.burnRate > 3 ? "text-red-400"
+                      : sloInsight.burnRate > 1 ? "text-amber-300"
+                      : "text-emerald-400"
+                    }`}>
+                      {sloInsight.burnRate.toFixed(1)}×
+                    </span>
+                  </div>
+                  {/* track */}
+                  <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                    <div
+                      className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${
+                        sloInsight.burnRate > 3 ? "bg-red-500"
+                        : sloInsight.burnRate > 1 ? "bg-amber-400"
+                        : "bg-emerald-500"
+                      }`}
+                      style={{ width: `${Math.min(100, (sloInsight.burnRate / 10) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-zinc-600">
+                    {sloInsight.burnRate > 3
+                      ? "Critical — error budget exhausting rapidly"
+                      : sloInsight.burnRate > 1
+                        ? "Warning — consuming above sustainable rate"
+                        : "Healthy — within error budget"}
+                  </p>
+                </div>
+              )}
             </div>
               {sloInsight.actualSuccessPct != null ? (
                 <div className="shrink-0 rounded-xl border border-white/[0.06] bg-slate-950/40 px-3 py-2">
@@ -749,17 +904,20 @@ export function DashboardV2View() {
         </div>
 
         <div className="pulse-card p-5">
-          <div className="text-xs font-semibold text-white">
-            Latency percentiles (traces)
-          </div>
-          <div className="text-[11px] text-zinc-500">
+          <h2 className="pulse-h3">Latency Percentiles</h2>
+          <p className="text-[11px] text-zinc-500">
             Root spans · p50 / p95 / p99 ·{" "}
-            {chartSvc ?? "select telemetry"}
-          </div>
+            <span className="font-medium text-zinc-300">{chartSvc ?? "select telemetry"}</span>
+          </p>
           <div className="mt-3 h-48">
             {traceLatencySeries.length === 0 ? (
-              <div className="pulse-chart-empty h-48">
-                No trace roots in window.
+              <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-xl border border-dashed" style={{ borderColor: 'rgba(6,214,199,0.15)' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(6,214,199,0.5)" strokeWidth="1.5" strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-zinc-400">No trace roots in this window</p>
+                  <p className="mt-0.5 text-[11px] text-zinc-600">Ingest spans or load demo data</p>
+                </div>
+                <button type="button" onClick={() => void runDemoSeed()} disabled={loading} className="pulse-btn-primary py-1.5 text-xs disabled:opacity-50">Load demo</button>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -802,10 +960,10 @@ export function DashboardV2View() {
                     type="monotone"
                     dataKey="p50"
                     name="p50"
-                    stroke={pulseChartSeries.violetStroke}
+                    stroke={pulseChartSeries.tealStroke}
                     dot={false}
                     strokeWidth={2}
-                    filter="url(#dash-latency-lines-glow-violet)"
+                    filter="url(#dash-latency-lines-glow-teal)"
                   />
                   <Line
                     type="monotone"
@@ -856,9 +1014,7 @@ export function DashboardV2View() {
       <section className="pulse-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-white">
-              Service performance (APM)
-            </h2>
+            <h2 className="pulse-h3">Service Performance</h2>
             <p className="text-[11px] leading-relaxed text-zinc-500">
               Root-span latency percentiles and error rate vs. requests.
             </p>
@@ -872,59 +1028,64 @@ export function DashboardV2View() {
             <thead className="pulse-table-head">
               <tr>
                 <th className="py-2 pr-3 font-medium">Service</th>
-                <th className="px-2 py-2 text-right font-medium tabular-nums">
-                  Traces
-                </th>
-                <th className="px-2 py-2 text-right font-medium tabular-nums">
-                  Roots
-                </th>
-                <th className="px-2 py-2 text-right font-medium tabular-nums">
-                  Err%
-                </th>
-                <th className="px-2 py-2 text-right font-medium tabular-nums">
-                  p95
-                </th>
+                <th className="px-2 py-2 text-right font-medium tabular-nums">Traces</th>
+                <th className="px-2 py-2 text-right font-medium tabular-nums">Roots</th>
+                <th className="px-2 py-2 text-right font-medium tabular-nums">Err%</th>
+                <th className="px-2 py-2 text-right font-medium tabular-nums">p95</th>
+                <th className="px-2 py-2 font-medium" style={{ width: 72 }}>Trend</th>
                 <th className="px-2 py-2 text-right font-medium">Drill-in</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {apmServices.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-zinc-500">
-                    No trace roots in this range. Seed demo or ingest spans.
-                  </td>
-                </tr>
+                <td colSpan={6}>
+                  <div className="flex flex-col items-center gap-3 py-10">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(56,189,248,0.4)" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <div className="text-center">
+                      <p className="text-xs font-medium text-zinc-400">No services found in this range</p>
+                      <p className="mt-0.5 text-[11px] text-zinc-600">Seed demo traces or ingest root spans</p>
+                    </div>
+                    <button type="button" onClick={() => void runDemoSeed()} disabled={loading} className="pulse-btn-primary py-1.5 text-xs disabled:opacity-50">Load demo data</button>
+                  </div>
+                </td>
+              </tr>
               ) : (
                 apmServices.slice(0, 8).map((r) => (
-                  <tr key={r.service} className="hover:bg-white/[0.02]">
-                    <td className="py-2 pr-3 font-medium text-zinc-200">
-                      {r.service}
+                  <tr key={r.service} className="group border-b border-white/[0.04] transition hover:bg-white/[0.03]">
+                    <td className="py-2.5 pr-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex size-1.5 shrink-0 rounded-full ${r.errorRate > 0.01 ? 'bg-red-400 shadow shadow-red-500/40' : r.errorRate > 0 ? 'bg-amber-400 shadow shadow-amber-400/30' : 'bg-emerald-400 shadow shadow-emerald-400/25'}`} />
+                        <span className="font-medium text-zinc-100">{r.service}</span>
+                      </div>
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-zinc-400">
-                      {r.traces.toLocaleString()}
+                    <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.traces.toLocaleString()}</td>
+                    <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.requests.toLocaleString()}</td>
+                    <td className="px-2 py-2.5 text-right">
+                      {r.requests > 0 ? (
+                        <span className={`pulse-chip ${
+                          r.errorRate > 0.01 ? 'pulse-chip-danger'
+                          : r.errorRate > 0   ? 'pulse-chip-warning'
+                          : 'pulse-chip-success'
+                        }`}>
+                          {fmtErrRate(r.errorRate)}
+                        </span>
+                      ) : <span className="text-zinc-600">—</span>}
                     </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-zinc-400">
-                      {r.requests.toLocaleString()}
+                    <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{fmtApmDur(r.p95Ms)}</td>
+                    {/* Sparkline — p95 latency trend */}
+                    <td className="px-2 py-2.5">
+                      <MiniSparkline
+                        data={serviceSparklines[r.service] ?? []}
+                        color="#38bdf8"
+                        dangerColor="#fb7185"
+                        danger={r.errorRate > 0.01}
+                        w={56}
+                        h={20}
+                      />
                     </td>
-                    <td
-                      className={`px-2 py-2 text-right tabular-nums ${
-                        r.errorRate > 0.01
-                          ? "text-red-300"
-                          : r.errorRate > 0
-                            ? "text-amber-200"
-                            : "text-zinc-400"
-                      }`}
-                    >
-                      {r.requests > 0 ? fmtErrRate(r.errorRate) : "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-zinc-400">
-                      {fmtApmDur(r.p95Ms)}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <Link
-                        href={`/traces?service=${encodeURIComponent(r.service)}`}
-                        className="pulse-link font-medium"
-                      >
+                    <td className="px-2 py-2.5 text-right">
+                      <Link href={`/traces?service=${encodeURIComponent(r.service)}`} className="pulse-link font-medium">
                         Traces
                       </Link>
                     </td>
@@ -938,16 +1099,30 @@ export function DashboardV2View() {
 
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="pulse-card-soft p-5">
-          <div className="text-xs font-semibold text-white">
-            Latency (avg)
-          </div>
-          <div className="text-[11px] text-zinc-500">
-            http.server.request_duration_ms · {chartSvc ?? "—"}
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h2 className="pulse-h3">Latency (avg)</h2>
+              <p className="text-[11px] text-zinc-500">
+                http.server.request_duration_ms · <span className="text-zinc-300">{chartSvc ?? "—"}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowComparison(v => !v)}
+              className={`shrink-0 rounded-lg border px-2.5 py-1 text-[10px] font-medium transition ${
+                showComparison
+                  ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                  : 'border-white/[0.08] bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              vs prev
+            </button>
           </div>
           <div className="mt-4 h-56">
             {seriesLatency.length === 0 ? (
-              <div className="pulse-chart-empty h-56">
-                No metric series
+              <div className="flex h-56 flex-col items-center justify-center gap-2 rounded-xl border border-dashed" style={{ borderColor: 'rgba(56,189,248,0.12)' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(56,189,248,0.4)" strokeWidth="1.5" strokeLinecap="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                <p className="text-xs text-zinc-500">No metric series — load demo data first</p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -974,12 +1149,26 @@ export function DashboardV2View() {
                   <Area
                     type="monotone"
                     dataKey="value"
-                    stroke={pulseChartSeries.violetStroke}
+                    name="current"
+                    stroke={pulseChartSeries.tealStroke}
                     fillOpacity={1}
-                    fill="url(#dash-metric-lat-area-violet)"
+                    fill="url(#dash-metric-lat-area-teal)"
                     strokeWidth={2}
-                    filter="url(#dash-metric-lat-glow-violet)"
+                    filter="url(#dash-metric-lat-glow-teal)"
                   />
+                  {showComparison && prevSeriesLatency.length > 0 && (
+                    <Line
+                      type="monotone"
+                      data={prevSeriesLatency}
+                      dataKey="value"
+                      name="prev period"
+                      stroke="#64748b"
+                      strokeWidth={1.5}
+                      strokeDasharray="5 4"
+                      dot={false}
+                      opacity={0.55}
+                    />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -987,14 +1176,30 @@ export function DashboardV2View() {
         </div>
 
         <div className="pulse-card-soft p-5">
-          <div className="text-xs font-semibold text-white">Throughput</div>
-          <div className="text-[11px] text-zinc-500">
-            http.server.requests · {chartSvc ?? "—"}
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h2 className="pulse-h3">Throughput</h2>
+              <p className="text-[11px] text-zinc-500">
+                http.server.requests · <span className="text-zinc-300">{chartSvc ?? "—"}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowComparison(v => !v)}
+              className={`shrink-0 rounded-lg border px-2.5 py-1 text-[10px] font-medium transition ${
+                showComparison
+                  ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                  : 'border-white/[0.08] bg-white/[0.03] text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              vs prev
+            </button>
           </div>
           <div className="mt-4 h-56">
             {seriesRpm.length === 0 ? (
-              <div className="pulse-chart-empty h-56">
-                No metric series
+              <div className="flex h-56 flex-col items-center justify-center gap-2 rounded-xl border border-dashed" style={{ borderColor: 'rgba(56,189,248,0.12)' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(56,189,248,0.4)" strokeWidth="1.5" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <p className="text-xs text-zinc-500">No throughput data — load demo data first</p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -1034,38 +1239,70 @@ export function DashboardV2View() {
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="pulse-card-glow p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-white">
-                Live logs
-              </h2>
-              <p className="text-[11px] leading-relaxed text-zinc-500">
-                Window matches the range above.{" "}
-                <Link href="/logs" className="pulse-link text-[11px]">
-                  Full explorer →
-                </Link>
-              </p>
+              <div>
+                <h2 className="pulse-h3">Live Logs</h2>
+                <p className="text-[11px] leading-relaxed text-zinc-500">
+                  Window matches the range above.{" "}
+                  <Link href="/logs" className="pulse-link text-[11px]">Full explorer →</Link>
+                </p>
+              </div>
+            <div className="flex items-center gap-2">
+              {live && logs.length > 0 && (
+                <span className="flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-emerald-400" style={{ borderColor: 'rgba(16,217,138,0.25)', background: 'rgba(16,217,138,0.08)' }}>
+                  <span className="inline-block size-1.5 animate-ping rounded-full bg-emerald-400" />
+                  Streaming
+                </span>
+              )}
+              {data?.services.length ? (
+                <select
+                  value={logService || chartSvc || ""}
+                  onChange={(e) => setLogService(e.target.value)}
+                  className="pulse-select py-1.5 text-xs"
+                >
+                  {data.services.map((s) => (
+                    <option key={s.service} value={s.service}>{s.service}</option>
+                  ))}
+                </select>
+              ) : null}
             </div>
-            {data?.services.length ? (
-              <select
-                value={logService || chartSvc || ""}
-                onChange={(e) => setLogService(e.target.value)}
-                className="pulse-select py-1.5 text-xs"
-              >
-                {data.services.map((s) => (
-                  <option key={s.service} value={s.service}>
-                    {s.service}
-                  </option>
-                ))}
-              </select>
-            ) : null}
           </div>
-          <div className="pulse-scroll mt-4 max-h-[320px] overflow-auto rounded-xl border border-white/[0.06] bg-slate-950/25">
+
+          {/* ── Log Volume Heatmap ── */}
+          {logHeatmap.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-1.5 text-[10px] uppercase tracking-widest text-zinc-600">Log volume</p>
+              <div className="flex gap-px overflow-hidden rounded-lg">
+                {logHeatmap.map((b, i) => {
+                  const dominant = b.error > 0 ? 'error' : b.warn > 0 ? 'warn' : b.total > 0 ? 'info' : 'none';
+                  const bg = dominant === 'error'
+                    ? `rgba(251,113,133,${Math.min(0.9, 0.2 + b.error * 0.15)})`
+                    : dominant === 'warn'
+                      ? `rgba(251,191,36,${Math.min(0.85, 0.15 + b.warn * 0.12)})`
+                      : dominant === 'info'
+                        ? `rgba(56,189,248,${Math.min(0.7, 0.1 + b.info * 0.08)})`
+                        : 'rgba(255,255,255,0.03)';
+                  return (
+                    <div
+                      key={i}
+                      className="h-5 flex-1 cursor-default transition-opacity hover:opacity-75"
+                      style={{ background: bg, minWidth: 2 }}
+                      title={`${b.error} error · ${b.warn} warn · ${b.info} info`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="mt-1 flex justify-between text-[9px] text-zinc-700">
+                <span>← older</span><span>now →</span>
+              </div>
+            </div>
+          )}
+          <div
+            ref={logListRef}
+            className="pulse-scroll mt-4 max-h-[320px] overflow-auto rounded-xl border border-white/[0.06] bg-slate-950/25">
             <table className="w-full text-left text-[11px]">
               <thead className="pulse-table-head">
                 <tr>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">
-                    Time
-                  </th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Time</th>
                   <th className="px-3 py-2 font-medium">Level</th>
                   <th className="px-3 py-2 font-medium">Message</th>
                   <th className="px-3 py-2 font-medium">Trace</th>
@@ -1083,24 +1320,27 @@ export function DashboardV2View() {
                   </tr>
                 ) : (
                   logs.map((row, i) => {
+                    const isNew = live && i < (logs.length - prevLogCountRef.current);
+                    if (i === logs.length - 1) prevLogCountRef.current = logs.length;
                     const tid = traceIdFromAttributes(row.attributes);
                     return (
                     <tr
                       key={`${row.ts}-${i}`}
-                      className="border-b border-white/5 hover:bg-white/[0.03]"
+                      className={`border-b border-white/5 transition hover:bg-white/[0.03] ${isNew ? 'pulse-log-row-new' : ''}`}
                     >
                       <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-zinc-500">
                         {format(new Date(row.ts), "HH:mm:ss")}
                       </td>
                       <td className="px-3 py-1.5">
                         <span
-                          className={`rounded px-1.5 py-0.5 font-medium uppercase ${
+                          className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                             row.level === "error"
-                              ? "bg-red-500/15 text-red-300"
-                              : row.level === "warn" ||
-                                  row.level === "warning"
-                                ? "bg-amber-500/15 text-amber-200"
-                                : "bg-zinc-500/15 text-zinc-300"
+                              ? "bg-red-500/15 text-red-300 ring-1 ring-red-500/25"
+                              : row.level === "warn" || row.level === "warning"
+                                ? "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/25"
+                                : row.level === "info"
+                                  ? "bg-sky-500/12 text-sky-300 ring-1 ring-sky-500/20"
+                                  : "bg-zinc-500/15 text-zinc-400 ring-1 ring-white/10"
                           }`}
                         >
                           {row.level}
@@ -1133,36 +1373,42 @@ export function DashboardV2View() {
         <div className="flex flex-col gap-4">
           <div className="pulse-card-glow p-5">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-white">
-                Service health
-              </h2>
+              <h2 className="pulse-h3">Service Health</h2>
               <span className="pulse-badge-live text-[10px] normal-case tracking-normal">
                 Range
               </span>
             </div>
             <ul className="pulse-scroll mt-4 flex max-h-64 flex-col gap-2 overflow-auto">
               {!data?.services.length ? (
-                <li className="pulse-chart-empty border-none bg-transparent px-3 py-8 text-xs">
-                  No services. Seed demo or ingest.
+                <li className="flex flex-col items-center gap-3 py-6">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(6,214,199,0.35)" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <p className="text-center text-[11px] text-zinc-600">No services. Load demo data to populate.</p>
+                  <button type="button" onClick={() => void runDemoSeed()} disabled={loading} className="pulse-btn-primary py-1 text-xs disabled:opacity-50">Seed demo</button>
                 </li>
               ) : (
                 data.services.map((s) => (
                   <li
                     key={s.service}
-                    className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-slate-950/40 px-3 py-2.5 shadow-inner shadow-slate-950/25"
+                    className="group flex items-center gap-3 rounded-xl border border-white/[0.05] bg-slate-950/40 px-3 py-2.5 transition hover:border-white/[0.09] hover:bg-slate-950/60"
                   >
                     <span
-                      className={`inline-flex size-2 shrink-0 rounded-full ${healthDot(s.health)}`}
-                      title={s.health}
-                    />
+                      className={`relative flex size-2.5 shrink-0`}
+                    >
+                      <span className={`inline-flex size-2.5 rounded-full ${healthDot(s.health)}`} title={s.health} />
+                      {s.health !== "healthy" && (
+                        <span className={`absolute inset-0 animate-ping rounded-full opacity-60 ${s.health === "critical" ? 'bg-red-500' : 'bg-amber-400'}`} />
+                      )}
+                    </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium text-white">
-                        {s.service}
-                      </div>
-                      <div className="text-[10px] text-zinc-500">
-                        {s.metrics1h} pts · {s.logs1h} logs · {s.errors1h} err
+                      <div className="truncate text-xs font-medium text-zinc-100">{s.service}</div>
+                      <div className="text-[10px] text-zinc-600">
+                        {s.metrics1h} pts · {s.logs1h} logs
+                        {s.errors1h > 0 ? <span className="ml-1 text-red-400">· {s.errors1h} err</span> : null}
                       </div>
                     </div>
+                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${
+                      s.health === 'critical' ? 'text-red-400' : s.health === 'degraded' ? 'text-amber-300' : 'text-emerald-400'
+                    }`}>{s.health}</span>
                   </li>
                 ))
               )}
@@ -1170,14 +1416,10 @@ export function DashboardV2View() {
           </div>
 
           <div className="pulse-card p-5">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-white">
-                Dependencies
-              </h2>
-              <Link href="/map" className="pulse-link text-[10px] font-semibold">
-                Map →
-              </Link>
-            </div>
+              <div>
+                <h2 className="pulse-h3">Dependencies</h2>
+                <Link href="/map" className="pulse-link text-[10px] font-semibold">Map →</Link>
+              </div>
             {depEdges.length === 0 ? (
               <p className="mt-2 text-[11px] text-zinc-500">
                 No edges in range. Ingest traces with peer calls.
@@ -1187,9 +1429,9 @@ export function DashboardV2View() {
                 {depEdges.map((e) => (
                   <li
                     key={`${e.source}-${e.target}`}
-                    className="flex flex-wrap items-center gap-1 text-[10px]"
+                    className="flex flex-wrap items-center gap-1 rounded-lg border border-white/[0.04] bg-slate-950/30 px-2 py-1.5 text-[10px] transition hover:border-white/[0.08]"
                   >
-                    <span className="font-medium text-violet-200">
+                    <span className="font-medium text-cyan-300">
                       {e.source}
                     </span>
                     <span className="text-zinc-600">→</span>

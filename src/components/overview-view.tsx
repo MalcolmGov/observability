@@ -236,10 +236,10 @@ export function OverviewView() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-8 px-4 py-8 sm:px-8">
-      <div className="pulse-page-head border-white/[0.06]">
+    <div className="pulse-page pulse-page-transition gap-6 py-6 sm:py-8">
+      <header className="pulse-page-head border-white/[0.06] pb-5">
         <div>
-          <h1 className="pulse-h1 text-2xl sm:text-[1.65rem]">
+          <h1 className="bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-[1.65rem] font-bold tracking-tight text-transparent" style={{ letterSpacing: '-0.03em' }}>
             Overview
           </h1>
           <p className="pulse-lead mt-1 max-w-2xl">
@@ -249,46 +249,33 @@ export function OverviewView() {
         </div>
         <div className="flex flex-wrap gap-2">
           <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-zinc-300 shadow-inner shadow-slate-950/25">
-            <input
-              type="checkbox"
-              checked={live}
-              onChange={(e) => setLive(e.target.checked)}
-              className="rounded border-white/20"
-            />
-            Live (15s)
+            <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} className="rounded border-white/20 text-cyan-500 focus:ring-cyan-500/30" />
+            <span className={live ? 'text-emerald-300' : ''}>Live (15s)</span>
           </label>
-          <button
-            type="button"
-            onClick={() => void load("full")}
-            className="pulse-btn-secondary text-sm"
-          >
+          <button type="button" onClick={() => void load("full")} className="pulse-btn-secondary">
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={() => void seedDemo()}
-            disabled={loading}
-            className="pulse-btn-primary text-sm disabled:opacity-50"
-          >
+          <button type="button" onClick={() => void seedDemo()} disabled={loading} className="pulse-btn-primary disabled:opacity-50">
             Load demo data
           </button>
         </div>
-      </div>
+      </header>
 
       {error ? <div className="pulse-alert-error">{error}</div> : null}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {kpis.map((k) => (
-          <div key={k.label} className="pulse-card p-4">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-              {k.label}
+        {kpis.map((k, i) => {
+          const stripes = ['pulse-stat-stripe-emerald','pulse-stat-stripe-teal','pulse-stat-stripe-sky','pulse-stat-stripe-rose'] as const;
+          return (
+            <div key={k.label} className={`pulse-stat-card ${stripes[i]} p-4 pt-5`}>
+              <div className="pulse-eyebrow">{k.label}</div>
+              <div className="mt-2 text-2xl font-bold tabular-nums text-white">
+                {loading && !data ? <span className="inline-block h-7 w-16 rounded-lg pulse-skeleton" /> : k.value}
+              </div>
+              <div className="pulse-caption mt-1">{k.hint}</div>
             </div>
-            <div className="mt-2 text-2xl font-semibold tabular-nums text-white">
-              {loading && !data ? "—" : k.value}
-            </div>
-            <div className="mt-1 text-[11px] text-zinc-500">{k.hint}</div>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -297,7 +284,7 @@ export function OverviewView() {
             title="Latency (avg)"
             subtitle="http.server.request_duration_ms · 1h"
             data={seriesA}
-            color={pulseChartSeries.violetSoft}
+            color={pulseChartSeries.cyan}
             gradientId="mini-latency"
           />
           <MiniSeries
@@ -312,10 +299,8 @@ export function OverviewView() {
         <div className="pulse-card p-5">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-white">
-                Service health
-              </h2>
-              <p className="mt-1 text-[11px] text-zinc-500">
+              <h2 className="pulse-h3">Service health</h2>
+              <p className="pulse-caption mt-1">
                 Errors, warnings, and ingest freshness across telemetry types.
               </p>
             </div>
@@ -363,16 +348,14 @@ export function OverviewView() {
         </div>
       </section>
 
-      <section className="pulse-card p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-white">
-              Dependencies (1h)
-            </h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              Top edges from traces. Open the full map for the complete graph.
-            </p>
-          </div>
+        <div className="pulse-card p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="pulse-h3">Dependencies (1h)</h2>
+              <p className="pulse-caption mt-1">
+                Top edges from traces. Open the full map for the complete graph.
+              </p>
+            </div>
           <Link
             href="/map"
             className="text-xs font-medium text-indigo-400 hover:text-indigo-300"
@@ -402,10 +385,10 @@ export function OverviewView() {
             ))}
           </ul>
         )}
-      </section>
+      </div>
 
       <section className="pulse-card p-5">
-        <h2 className="text-sm font-semibold text-white">Quick ingest</h2>
+        <h2 className="pulse-h3">Quick ingest</h2>
         <p className="mt-2 text-xs text-zinc-500">
           POST JSON to{" "}
           <code className="text-indigo-300">/api/v1/ingest/metrics</code>,{" "}

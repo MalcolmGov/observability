@@ -38,6 +38,25 @@ function spanDepth(s: Span, byId: Map<string, Span>): number {
   return d;
 }
 
+// Hash service name → one of 8 teal/sky/emerald/amber palette colours
+const SVC_PALETTE = [
+  '#06d6c7', '#38bdf8', '#34d399', '#a78bfa',
+  '#fb923c', '#f472b6', '#facc15', '#60a5fa',
+];
+function svcColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return SVC_PALETTE[h % SVC_PALETTE.length]!;
+}
+
+// Timing bar colour: teal (fast) → amber (medium) → red (slow)
+function timingBarColor(pct: number, isError: boolean): string {
+  if (isError) return 'rgba(251,113,133,0.75)';
+  if (pct < 0.25) return 'rgba(6,214,199,0.70)';
+  if (pct < 0.55) return 'rgba(251,191,36,0.72)';
+  return 'rgba(251,113,133,0.72)';
+}
+
 export function TraceWaterfallView({ traceId }: { traceId: string }) {
   const [data, setData] = useState<{
     startTs: number;
@@ -154,8 +173,13 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
 
   if (!data) {
     return (
-      <div className="px-4 py-10 sm:px-8 text-sm text-zinc-500">
-        Loading trace…
+      <div className="flex flex-col gap-3 px-4 py-10 sm:px-8">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="h-10 w-[240px] animate-pulse rounded-lg bg-white/[0.04]" style={{ opacity: 1 - i * 0.1 }} />
+            <div className="h-5 flex-1 animate-pulse rounded bg-white/[0.03]" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -166,7 +190,7 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
         <div>
           <Link
             href="/traces"
-            className="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+            className="text-xs font-medium text-teal-400 hover:text-teal-300"
           >
             ← Traces
           </Link>
@@ -251,83 +275,84 @@ export function TraceWaterfallView({ traceId }: { traceId: string }) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-zinc-500">
-          <span>Span</span>
-          <span>
-            Timeline · amber ring = critical path ·{" "}
-            {layoutMode === "flame"
-              ? "flame sort (depth, duration)"
-              : "chronological"}
+      <div className="rounded-2xl border border-white/10 bg-slate-950/50">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-white/[0.06] bg-slate-950/90 px-4 py-2.5 backdrop-blur-sm">
+          <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-zinc-500">
+            <span>Span</span>
+            <span className="text-zinc-700">·</span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block size-1.5 rounded-sm bg-amber-400" /> Critical path
+            </span>
+            <span className="text-zinc-700">·</span>
+            <span>{layoutMode === "flame" ? "flame sort" : "chronological"}</span>
+          </div>
+          <span className="font-mono text-[10px] tabular-nums text-zinc-600">
+            {data.durationMs.toFixed(1)} ms total · {data.spans.length} spans
           </span>
         </div>
-        <div className="flex flex-col gap-2">
-          {rows.map(({ s, depth, left, width }) => (
-            <div key={s.spanId} className="flex items-stretch gap-2">
+        <div className="flex flex-col gap-1.5 p-4">
+          {rows.map(({ s, depth, left, width }) => {
+            const isCrit = criticalIds.has(s.spanId);
+            const isErr = s.status === "error";
+            const durPct = data.durationMs > 0 ? s.durationMs / data.durationMs : 0;
+            const color = svcColor(s.service);
+            return (
+            <div
+              key={s.spanId}
+              className="flex items-stretch gap-2"
+              style={isCrit ? { borderLeft: '2px solid rgba(251,191,36,0.55)', paddingLeft: 4, marginLeft: -6 } : {}}
+            >
               <div
                 className="w-[220px] shrink-0 pt-1 text-[11px] leading-snug sm:w-[280px]"
                 style={{ paddingLeft: depth * 14 }}
               >
-                <div className="font-medium text-zinc-200">
-                  {s.service}
+                {/* Service pill */}
+                <div className="mb-0.5 flex items-center gap-1.5">
+                  <span
+                    className="inline-block size-1.5 shrink-0 rounded-full"
+                    style={{ background: color, boxShadow: `0 0 5px ${color}66` }}
+                  />
+                  <span className="font-semibold" style={{ color }}>{s.service}</span>
                   {s.peerService ? (
-                    <span className="text-zinc-500">
-                      {" "}
-                      → {s.peerService}
-                    </span>
+                    <span className="text-zinc-500"> → {s.peerService}</span>
                   ) : null}
                 </div>
-                <div className="text-zinc-500">
+                <div className="text-zinc-400">
                   {s.name}{" "}
-                  <span className="text-zinc-600">
-                    ({s.kind}
-                    {s.status === "error" ? ", error" : ""})
-                  </span>
+                  <span className="text-zinc-600">({s.kind}{s.status === "error" ? ", error" : "})"})</span>
                 </div>
-                <div className="tabular-nums text-zinc-600">
-                  {s.durationMs.toFixed(1)} ms
-                </div>
+                <div className="tabular-nums text-zinc-600">{s.durationMs.toFixed(1)} ms</div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <Link
                     href={`/logs?traceId=${encodeURIComponent(traceId)}&service=${encodeURIComponent(s.service)}&windowMs=${String(logsWindowMs)}`}
-                    className="text-[10px] font-medium text-indigo-400 hover:text-indigo-300"
+                    className="text-[10px] font-medium text-teal-400 hover:text-teal-300"
                     onClick={(e) => e.stopPropagation()}
                   >
                     Logs
                   </Link>
                   {Array.isArray(s.events) && s.events.length > 0 ? (
-                    <span className="text-[10px] text-zinc-600">
-                      {s.events.length} events
-                    </span>
+                    <span className="text-[10px] text-zinc-600">{s.events.length} events</span>
                   ) : null}
                   {Array.isArray(s.links) && s.links.length > 0 ? (
-                    <span className="text-[10px] text-zinc-600">
-                      {s.links.length} links
-                    </span>
+                    <span className="text-[10px] text-zinc-600">{s.links.length} links</span>
                   ) : null}
                 </div>
               </div>
               <div className="relative min-h-9 min-w-0 flex-1 rounded-lg bg-slate-950/45">
                 <div
-                  className={`pulse-transition absolute top-1/2 h-5 -translate-y-1/2 rounded ${criticalIds.has(s.spanId) ? "ring-2 ring-offset-2 ring-offset-slate-950" : ""}`}
+                  className="pulse-transition absolute top-1/2 h-5 -translate-y-1/2 rounded"
                   style={{
-                    background:
-                      s.status === "error"
-                        ? "color-mix(in srgb, var(--pulse-status-danger-fg) 75%, transparent)"
-                        : s.kind === "client"
-                          ? "color-mix(in srgb, var(--pulse-status-warning-fg) 75%, transparent)"
-                          : "color-mix(in srgb, var(--pulse-status-info-fg) 80%, transparent)",
-                    boxShadow: criticalIds.has(s.spanId)
-                      ? "0 0 0 2px var(--pulse-status-warning-border)"
-                      : undefined,
+                    background: timingBarColor(durPct, isErr),
+                    boxShadow: isCrit ? '0 0 0 1.5px rgba(251,191,36,0.6)' : undefined,
                     left: `${left}%`,
                     width: `${Math.max(width, 0.35)}%`,
                   }}
-                  title={`${s.name} · ${s.durationMs.toFixed(1)}ms`}
+                  title={`${s.name} · ${s.durationMs.toFixed(1)}ms (${(durPct * 100).toFixed(0)}% of trace)`}
                 />
               </div>
             </div>
-          ))}
+          )})}
         </div>
       </div>
 

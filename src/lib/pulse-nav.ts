@@ -67,4 +67,10 @@ export const PULSE_PRIMARY_NAV: readonly PulseNavItem[] = [
     desc: "Detection rules",
     keywords: "monitoring slo silence",
   },
+  {
+    href: "/integrations",
+    label: "Integrations",
+    desc: "Connect data sources",
+    keywords: "cloud kubernetes docker aws gcp azure database kafka otlp prometheus",
+  },
 ] as const;

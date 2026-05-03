@@ -218,17 +218,15 @@ export function ServicesView() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 px-4 py-8 sm:px-8">
-      <header className="flex flex-col gap-4 border-b border-white/10 pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="pulse-page pulse-page-transition gap-6 py-6 sm:py-8">
+      <header className="pulse-page-head border-white/[0.06] pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">
+          <h1 className="bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-[1.65rem] font-bold tracking-tight text-transparent" style={{ letterSpacing: '-0.03em' }}>
             Services
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-400">
+          <p className="pulse-lead">
             APM-style inventory: request volume, error rate, and latency
-            percentiles from root spans (entry points), distinct traces, and
-            (with Live) time-synced endpoint + latency panels—similar to Datadog
-            APM and Dynatrace service screens.
+            percentiles from root spans — similar to Datadog APM and Dynatrace.
           </p>
           {(scopeProduct || scopeMarket || scopeEnv) && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -236,7 +234,7 @@ export function ServicesView() {
                 Scoped
               </span>
               {scopeProduct ? (
-                <span className="rounded-md bg-violet-500/15 px-2 py-0.5 text-xs text-violet-200 ring-1 ring-violet-500/25">
+                <span className="rounded-md bg-teal-500/15 px-2 py-0.5 text-xs text-teal-300 ring-1 ring-teal-500/25">
                   product={scopeProduct}
                 </span>
               ) : null}
@@ -260,46 +258,27 @@ export function ServicesView() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-white/10 bg-slate-950/35 p-0.5">
+          <div className="pulse-segment">
             {RANGE_PRESETS.map((r) => (
               <button
-                key={r.id}
-                type="button"
+                key={r.id} type="button"
                 onClick={() => setRangeMs(r.ms)}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
-                  rangeMs === r.ms
-                    ? "bg-indigo-500/25 text-indigo-100 ring-1 ring-indigo-500/40"
-                    : "text-zinc-500 hover:text-zinc-200"
-                }`}
+                className={`pulse-segment-btn sm:px-3 ${rangeMs === r.ms ? 'pulse-segment-btn-active' : ''}`}
               >
                 {r.label}
               </button>
             ))}
           </div>
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-300">
-            <input
-              type="checkbox"
-              checked={live}
-              onChange={(e) => setLive(e.target.checked)}
-              className="rounded border-white/20"
-            />
-            Live
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-zinc-300 shadow-inner shadow-slate-950/25">
+            <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} className="rounded border-white/20 text-cyan-500 focus:ring-cyan-500/30" />
+            <span className={live ? 'text-emerald-300' : ''}>Live</span>
           </label>
-          <button
-            type="button"
-            onClick={() => {
-              void load("full");
-              void loadServiceDetail("full");
-            }}
-            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-zinc-100 hover:bg-white/10"
-          >
+          <button type="button"
+            onClick={() => { void load("full"); void loadServiceDetail("full"); }}
+            className="pulse-btn-secondary">
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={() => void seedDemo()}
-            className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-400"
-          >
+          <button type="button" onClick={() => void seedDemo()} className="pulse-btn-primary">
             Demo data
           </button>
         </div>
@@ -368,15 +347,15 @@ export function ServicesView() {
                     {r.requests.toLocaleString()}
                   </td>
                   <td
-                    className={`px-4 py-3 text-right tabular-nums ${
-                      r.errorRate > 0.01
-                        ? "text-red-300"
-                        : r.errorRate > 0
-                          ? "text-amber-200"
-                          : "text-zinc-400"
-                    }`}
+                    className={`px-4 py-3 text-right tabular-nums`}
                   >
-                    {fmtPct(r.errorRate)}
+                    <span className={`pulse-chip ${
+                      r.errorRate > 0.01 ? 'pulse-chip-danger'
+                      : r.errorRate > 0 ? 'pulse-chip-warning'
+                      : 'pulse-chip-neutral'
+                    }`}>
+                      {fmtPct(r.errorRate)}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-400">
                     {fmtDur(r.p50Ms)}
@@ -525,7 +504,7 @@ export function ServicesView() {
                       type="monotone"
                       dataKey="p50"
                       name="p50"
-                      stroke={pulseChartSeries.violetSoft}
+                      stroke={pulseChartSeries.cyan}
                       dot={false}
                       strokeWidth={2}
                     />

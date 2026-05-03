@@ -11,6 +11,16 @@ import {
 } from "react";
 import { PULSE_PRIMARY_NAV } from "@/lib/pulse-nav";
 
+type Cmd = {
+  kind: "nav" | "action";
+  href?: string;
+  title: string;
+  subtitle: string;
+  haystack: string;
+  icon?: string;
+  onSelect?: () => void;
+};
+
 type CommandPaletteProps = {
   open: boolean;
   onClose: () => void;
@@ -26,19 +36,40 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
 
-  const items = useMemo(() => {
+  const items = useMemo<Cmd[]>(() => {
     const n = normalize(q);
-    const base = PULSE_PRIMARY_NAV.map((item) => ({
+    const navItems: Cmd[] = PULSE_PRIMARY_NAV.map((item) => ({
       kind: "nav" as const,
       href: item.href,
       title: item.label,
       subtitle: item.desc,
-      haystack: normalize(
-        `${item.label} ${item.desc} ${item.keywords ?? ""}`,
-      ),
+      icon: "→",
+      haystack: normalize(`${item.label} ${item.desc} ${item.keywords ?? ""}`),
     }));
-    return n === "" ? base : base.filter((x) => x.haystack.includes(n));
-  }, [q]);
+    const actions: Cmd[] = [
+      {
+        kind: "action" as const,
+        title: "Load demo data",
+        subtitle: "Seed all services, metrics, traces and logs",
+        icon: "▶",
+        haystack: "demo seed data load populate",
+        onSelect: () => {
+          void fetch("/api/v1/demo/seed", { method: "POST" });
+          onClose();
+        },
+      },
+      {
+        kind: "action" as const,
+        title: "Refresh page",
+        subtitle: "Hard-reload the current page",
+        icon: "↺",
+        haystack: "refresh reload",
+        onSelect: () => { window.location.reload(); },
+      },
+    ];
+    const all = [...navItems, ...actions];
+    return n === "" ? all : all.filter((x) => x.haystack.includes(n));
+  }, [q, onClose]);
 
   useEffect(() => {
     setActive(0);
@@ -53,9 +84,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   }, [open]);
 
   const go = useCallback(
-    (href: string) => {
-      router.push(href);
-      onClose();
+    (item: Cmd) => {
+      if (item.onSelect) {
+        item.onSelect();
+      } else if (item.href) {
+        router.push(item.href);
+        onClose();
+      }
     },
     [onClose, router],
   );
@@ -63,23 +98,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setActive((i) => Math.min(i + 1, Math.max(0, items.length - 1)));
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setActive((i) => Math.max(i - 1, 0));
-      }
-      if (e.key === "Enter" && items[active]) {
-        e.preventDefault();
-        go(items[active].href);
-      }
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, Math.max(0, items.length - 1))); }
+      if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+      if (e.key === "Enter" && items[active]) { e.preventDefault(); go(items[active]); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -89,60 +111,87 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-start justify-center px-3 pt-[min(18vh,140px)] sm:px-4"
+      className="fixed inset-0 z-[80] flex items-start justify-center px-3 pt-[min(14vh,120px)] sm:px-4"
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
     >
       <button
         type="button"
-        className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+        className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative z-[81] w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/95 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] ring-1 ring-white/[0.06]">
-        <div className="border-b border-white/[0.08] px-3 py-2">
+      <div className="relative z-[81] w-full max-w-xl overflow-hidden rounded-2xl shadow-[0_32px_80px_-12px_rgba(0,0,0,0.7)]" style={{ border: '1px solid rgba(6,214,199,0.18)', background: 'rgba(4,8,15,0.97)', backdropFilter: 'blur(24px)' }}>
+        {/* Search header */}
+        <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="rgba(6,214,199,0.6)" strokeWidth="1.5">
+            <circle cx="9" cy="9" r="5.5" /><path strokeLinecap="round" d="M13.5 13.5L17 17" />
+          </svg>
           <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Go to…"
-            className="w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
+            placeholder="Search pages and actions…"
+            className="flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
           />
-          <p className="px-2 pb-1 text-[10px] text-zinc-600">
-            ↑↓ navigate · ↵ open · esc close
-          </p>
+          <kbd className="shrink-0 rounded border border-white/[0.08] bg-slate-950/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">esc</kbd>
         </div>
-        <ul className="max-h-[min(52vh,380px)] overflow-y-auto py-1">
+
+        {/* Results */}
+        <ul className="max-h-[min(52vh,420px)] overflow-y-auto py-1.5">
           {items.length === 0 ? (
-            <li className="px-4 py-8 text-center text-sm text-zinc-500">
-              No matches
-            </li>
+            <li className="px-4 py-10 text-center text-sm text-zinc-600">No matches for &ldquo;{q}&rdquo;</li>
           ) : (
             items.map((item, i) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    go(item.href);
-                  }}
-                  className={`flex flex-col gap-0.5 px-4 py-2.5 text-left transition ${
-                    i === active
-                      ? "bg-violet-500/15 text-zinc-50"
-                      : "text-zinc-300 hover:bg-white/[0.04]"
-                  }`}
-                  onMouseEnter={() => setActive(i)}
-                >
-                  <span className="text-sm font-medium">{item.title}</span>
-                  <span className="text-[11px] text-zinc-500">
-                    {item.subtitle}
-                  </span>
-                </Link>
+              <li key={`${item.kind}-${item.title}`}>
+                {item.href ? (
+                  <Link
+                    href={item.href}
+                    onClick={(e) => { e.preventDefault(); go(item); }}
+                    className={`flex items-center gap-3 px-4 py-2.5 transition ${
+                      i === active
+                        ? "text-zinc-50" : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                    style={i === active ? { background: 'rgba(6,214,199,0.10)', borderLeft: '2px solid rgba(6,214,199,0.6)' } : { borderLeft: '2px solid transparent' }}
+                    onMouseEnter={() => setActive(i)}
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg text-sm" style={{ background: i === active ? 'rgba(6,214,199,0.12)' : 'rgba(255,255,255,0.04)', color: i === active ? '#06d6c7' : '#71717a' }}>{item.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium">{item.title}</span>
+                      <span className="block text-[11px] text-zinc-600">{item.subtitle}</span>
+                    </span>
+                    {i === active && <span className="text-[10px] text-zinc-700">↵</span>}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => go(item)}
+                    className={`flex w-full items-center gap-3 px-4 py-2.5 transition ${
+                      i === active ? "text-zinc-50" : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                    style={i === active ? { background: 'rgba(56,189,248,0.08)', borderLeft: '2px solid rgba(56,189,248,0.5)' } : { borderLeft: '2px solid transparent' }}
+                    onMouseEnter={() => setActive(i)}
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg text-sm" style={{ background: i === active ? 'rgba(56,189,248,0.10)' : 'rgba(255,255,255,0.04)', color: i === active ? '#38bdf8' : '#71717a' }}>{item.icon}</span>
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-medium">{item.title}</span>
+                      <span className="block text-[11px] text-zinc-600">{item.subtitle}</span>
+                    </span>
+                    {i === active && <span className="text-[10px] text-zinc-700">↵</span>}
+                  </button>
+                )}
               </li>
             ))
           )}
         </ul>
+
+        {/* Footer hint */}
+        <div className="flex items-center gap-4 border-t px-4 py-2" style={{ borderColor: 'rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+          <span className="text-[10px] text-zinc-700">↑↓ navigate</span>
+          <span className="text-[10px] text-zinc-700">↵ select</span>
+          <span className="text-[10px] text-zinc-700">esc close</span>
+        </div>
       </div>
     </div>
   );

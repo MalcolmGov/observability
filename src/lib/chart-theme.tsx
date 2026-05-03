@@ -65,9 +65,12 @@ export const pulseChartGridStroke = "var(--pulse-chart-grid-stroke)";
 
 /** Line / area strokes — use in SVG or Recharts `stroke` / `stopColor`. */
 export const pulseChartSeries = {
-  violet: "var(--pulse-series-violet)",
-  violetStroke: "var(--pulse-series-violet-stroke)",
-  violetSoft: "var(--pulse-series-violet-soft)",
+  // Primary palette — teal/sky/blue
+  teal: "var(--pulse-series-teal, #06d6c7)",
+  tealStroke: "var(--pulse-series-teal-stroke, #06d6c7)",
+  sky: "var(--pulse-series-sky, #38bdf8)",
+  skyStroke: "var(--pulse-series-sky-stroke, #38bdf8)",
+  // Semantic
   cyan: "var(--pulse-series-cyan)",
   amber: "var(--pulse-series-amber)",
   amberLine: "var(--pulse-series-amber-line)",
@@ -75,7 +78,11 @@ export const pulseChartSeries = {
   roseLine: "var(--pulse-series-rose-line)",
   emerald: "var(--pulse-series-emerald)",
   emeraldDeep: "var(--pulse-series-emerald-deep)",
-  indigo: "var(--pulse-series-indigo)",
+  // Legacy aliases — map to teal/cyan so old code keeps working
+  violet: "var(--pulse-series-teal, #06d6c7)",
+  violetStroke: "var(--pulse-series-teal-stroke, #06d6c7)",
+  violetSoft: "var(--pulse-series-cyan)",
+  indigo: "var(--pulse-series-sky, #38bdf8)",
 } as const;
 
 type DefsProps = { prefix: string };
@@ -132,6 +139,24 @@ export function PulseChartDefs({ prefix }: DefsProps) {
       </linearGradient>
       <filter id={`${prefix}-glow-violet`} x="-20%" y="-20%" width="140%" height="140%">
         <feGaussianBlur stdDeviation="2" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+      {/* Teal / sky gradient and glow */}
+      <linearGradient id={`${prefix}-area-teal`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#06d6c7" stopOpacity={0.45} />
+        <stop offset="50%" stopColor="#06d6c7" stopOpacity={0.12} />
+        <stop offset="100%" stopColor="#06d6c7" stopOpacity={0} />
+      </linearGradient>
+      <linearGradient id={`${prefix}-area-sky`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.4} />
+        <stop offset="50%" stopColor="#38bdf8" stopOpacity={0.1} />
+        <stop offset="100%" stopColor="#38bdf8" stopOpacity={0} />
+      </linearGradient>
+      <filter id={`${prefix}-glow-teal`} x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="2.5" result="blur" />
         <feMerge>
           <feMergeNode in="blur" />
           <feMergeNode in="SourceGraphic" />

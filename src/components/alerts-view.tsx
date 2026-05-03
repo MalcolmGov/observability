@@ -314,15 +314,15 @@ export function AlertsView() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-8 px-4 py-8 sm:px-8">
-      <header className="flex flex-col gap-4 border-b border-white/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="pulse-page pulse-page-transition gap-6 py-6 sm:py-8">
+      <header className="pulse-page-head border-white/[0.06] pb-5">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">
+          <h1 className="bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-[1.65rem] font-bold tracking-tight text-transparent" style={{ letterSpacing: '-0.03em' }}>
             Alerts
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-            Threshold rules on rolling metric averages — a stepping stone to
-            multi-window burn rates and anomaly helpers.
+          <p className="pulse-lead">
+            Threshold rules on rolling metric averages — route firing alerts to
+            Slack, PagerDuty, or any webhook endpoint.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -339,7 +339,7 @@ export function AlertsView() {
                 }
               })()
             }
-            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-zinc-100 hover:bg-white/10 disabled:opacity-50"
+            className="pulse-btn-secondary disabled:opacity-50"
           >
             Re-evaluate
           </button>
@@ -347,194 +347,164 @@ export function AlertsView() {
             type="button"
             disabled={busy}
             onClick={() => void seedDemo()}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+            className="pulse-btn-primary disabled:opacity-50"
           >
-            Load demo (+ default rule)
+            Load demo
           </button>
         </div>
       </header>
 
       {error ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
+        <div className="pulse-alert-error">{error}</div>
       ) : null}
 
-      <div
-        className={`rounded-xl border px-4 py-3 text-sm ${
-          firingCount > 0
-            ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
-            : "border-emerald-500/30 bg-emerald-500/5 text-emerald-100"
-        }`}
-      >
-        {firingCount > 0
-          ? `${firingCount} rule(s) firing — inspect evaluated metrics below.`
-          : "All enabled rules are within threshold (or have no data)."}
-        <span className="mt-2 block text-[11px] text-zinc-400">
-          Notifications sent (last eval): {notificationsSent}
-          {skippedDedupe > 0
-            ? ` · skipped dedupe: ${skippedDedupe}`
-            : ""}
-          {skippedSilence > 0
-            ? ` · skipped (silenced): ${skippedSilence}`
-            : ""}
-          {` · group window ${Math.round(groupWindowMs / 60000)}m`}
-        </span>
+      {/* Stats banner */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className={`pulse-stat-card pulse-stat-stripe-${firingCount > 0 ? 'rose' : 'emerald'} p-4 pt-5`}>
+          <div className="pulse-eyebrow">Firing</div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-white">{firingCount}</div>
+          <div className="pulse-caption mt-1">{firingCount > 0 ? 'Rules breaching threshold' : 'All clear'}</div>
+        </div>
+        <div className="pulse-stat-card pulse-stat-stripe-sky p-4 pt-5">
+          <div className="pulse-eyebrow">Notifications</div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-white">{notificationsSent}</div>
+          <div className="pulse-caption mt-1">Sent last evaluation</div>
+        </div>
+        <div className="pulse-stat-card pulse-stat-stripe-cyan p-4 pt-5">
+          <div className="pulse-eyebrow">Group window</div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-white">{Math.round(groupWindowMs / 60000)}m</div>
+          <div className="pulse-caption mt-1">
+            {skippedDedupe > 0 ? `${skippedDedupe} deduped` : 'Dedupe active'}
+            {skippedSilence > 0 ? ` · ${skippedSilence} silenced` : ''}
+          </div>
+        </div>
       </div>
 
-      <section className="grid gap-8 lg:grid-cols-2">
+      <section className="grid gap-6 lg:grid-cols-2">
         <form
           onSubmit={(e) => void createRule(e)}
-          className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-5"
+          className="pulse-card flex flex-col gap-3 p-5"
         >
-          <h2 className="text-sm font-semibold text-zinc-100">New rule</h2>
-          <label className="text-xs text-zinc-500">
+          <h2 className="pulse-h3">New rule</h2>
+          <label className="pulse-caption block">
             Name
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.name}
               placeholder="Checkout p95 budget"
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
           </label>
-          <label className="text-xs text-zinc-500">
+          <label className="pulse-caption block">
             Metric
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.metric_name}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, metric_name: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, metric_name: e.target.value }))}
             />
           </label>
-          <label className="text-xs text-zinc-500">
+          <label className="pulse-caption block">
             Service
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.service}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, service: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-zinc-500">
+            <label className="pulse-caption block">
               Comparator
               <select
-                className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+                className="pulse-select mt-1 w-full"
                 value={form.comparator}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    comparator: e.target.value as "gt" | "lt",
-                  }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, comparator: e.target.value as "gt" | "lt" }))}
               >
                 <option value="gt">greater than (&gt;)</option>
                 <option value="lt">less than (&lt;)</option>
               </select>
             </label>
-            <label className="text-xs text-zinc-500">
+            <label className="pulse-caption block">
               Threshold
               <input
-                type="number"
-                step="any"
-                className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+                type="number" step="any"
+                className="pulse-input mt-1 w-full"
                 value={form.threshold}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, threshold: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))}
               />
             </label>
           </div>
-          <label className="text-xs text-zinc-500">
+          <label className="pulse-caption block">
             Window (minutes)
             <input
-              type="number"
-              min={1}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              type="number" min={1}
+              className="pulse-input mt-1 w-full"
               value={form.window_minutes}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, window_minutes: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, window_minutes: e.target.value }))}
             />
           </label>
-          <label className="text-xs text-zinc-500">
-            Webhook URL (optional)
+          <label className="pulse-caption block">
+            Webhook URL <span className="text-zinc-600">(optional)</span>
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.webhook_url}
               placeholder="https://example.com/hooks/pulse"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, webhook_url: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, webhook_url: e.target.value }))}
             />
           </label>
-          <label className="text-xs text-zinc-500">
-            Slack incoming webhook (optional)
+          <label className="pulse-caption block">
+            Slack webhook <span className="text-zinc-600">(optional)</span>
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.slack_webhook_url}
               placeholder="https://hooks.slack.com/services/…"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, slack_webhook_url: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, slack_webhook_url: e.target.value }))}
             />
           </label>
-          <label className="text-xs text-zinc-500">
-            PagerDuty routing key (optional)
+          <label className="pulse-caption block">
+            PagerDuty routing key <span className="text-zinc-600">(optional)</span>
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.pagerduty_routing_key}
               placeholder="Events API v2 integration key"
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  pagerduty_routing_key: e.target.value,
-                }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, pagerduty_routing_key: e.target.value }))}
             />
           </label>
-          <label className="text-xs text-zinc-500">
-            Runbook URL (optional)
+          <label className="pulse-caption block">
+            Runbook URL <span className="text-zinc-600">(optional)</span>
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={form.runbook_url}
               placeholder="https://wiki.example.com/runbooks/checkout-latency"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, runbook_url: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, runbook_url: e.target.value }))}
             />
           </label>
-          <p className="text-[10px] text-zinc-600">
-            Firing rules notify via generic webhook (JSON{" "}
-            <code className="text-zinc-500">pulse.alert.firing</code>), Slack
-            text, or PagerDuty Events v2. Dedupe uses a per-channel rolling
-            window (
-            <code className="text-zinc-500">PULSE_ALERT_GROUP_WINDOW_MS</code>
-            ).
+          <p className="pulse-caption">
+            Firing rules notify via webhook (<code className="text-zinc-500">pulse.alert.firing</code>), Slack, or PagerDuty Events v2. Dedupe window: <code className="text-zinc-500">PULSE_ALERT_GROUP_WINDOW_MS</code>.
           </p>
-          <button
-            type="submit"
-            disabled={busy}
-            className="pulse-btn-primary mt-2"
-          >
+          <button type="submit" disabled={busy} className="pulse-btn-primary mt-2 disabled:opacity-50">
             Save rule
           </button>
         </form>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-          <h2 className="text-sm font-semibold text-zinc-100">
-            Saved rules ({rules.length})
-          </h2>
+        <div className="pulse-card-soft p-5">
+          <h2 className="pulse-h3">Saved rules <span className="ml-1 text-zinc-500">({rules.length})</span></h2>
           <ul className="mt-4 flex max-h-[min(50vh,400px)] flex-col gap-2 overflow-y-auto">
             {rules.length === 0 ? (
-              <li className="text-sm text-zinc-500">No rules yet.</li>
+              <li>
+                <div className="pulse-empty py-8">
+                  <div className="pulse-empty-icon">
+                    <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.082A2.25 2.25 0 0021.75 14v-1.44a2.25 2.25 0 00-1.263-2.026l-1.875-.937A2.25 2.25 0 0015.75 8.25V6a3.375 3.375 0 00-3.375-3.375h-1.5A3.375 3.375 0 007.5 6v2.25a2.25 2.25 0 01-1.662 2.163l-1.875.937A2.25 2.25 0 002.25 12.56v1.44c0 .754.385 1.458 1.021 1.86 1.68.98 3.49 1.719 5.382 2.184" /></svg>
+                  </div>
+                  <p className="pulse-empty-title">No rules yet</p>
+                  <p className="pulse-empty-hint">Create a rule to start monitoring metric thresholds and routing alerts.</p>
+                </div>
+              </li>
             ) : (
               rules.map((r) => (
                 <li
                   key={r.id}
-                  className="flex flex-col gap-2 rounded-xl border border-white/5 bg-slate-950/30 px-3 py-2 text-xs"
+                  className="group flex flex-col gap-2 rounded-xl border border-white/[0.05] bg-slate-950/40 px-3 py-3 text-xs transition hover:border-white/[0.09] hover:bg-slate-950/60"
+                  style={{ borderLeft: '3px solid rgba(56,189,248,0.25)' }}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -647,65 +617,54 @@ export function AlertsView() {
         </div>
       </section>
 
-      <section className="grid gap-8 lg:grid-cols-2">
+      <section className="grid gap-6 lg:grid-cols-2">
         <form
           onSubmit={(e) => void createSilence(e)}
-          className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/50 p-5"
+          className="pulse-card flex flex-col gap-3 p-5"
         >
-          <h2 className="text-sm font-semibold text-zinc-100">
-            Silence notifications
-          </h2>
-          <p className="text-[11px] text-zinc-500">
+          <h2 className="pulse-h3">Silence notifications</h2>
+          <p className="pulse-caption">
             Temporarily suppress outbound notifications for one rule or all
-            rules (evaluation still runs; rows show silenced).
+            rules. Evaluation still runs; rows show silenced.
           </p>
-          <label className="text-xs text-zinc-500">
+          <label className="pulse-caption block">
             Scope
             <select
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-select mt-1 w-full"
               value={silenceRuleId}
               onChange={(e) => setSilenceRuleId(e.target.value)}
             >
               <option value="">All rules</option>
               {rules.map((r) => (
-                <option key={r.id} value={String(r.id)}>
-                  {r.name}
-                </option>
+                <option key={r.id} value={String(r.id)}>{r.name}</option>
               ))}
             </select>
           </label>
-          <label className="text-xs text-zinc-500">
+          <label className="pulse-caption block">
             Duration (minutes, min 5)
             <input
-              type="number"
-              min={5}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              type="number" min={5}
+              className="pulse-input mt-1 w-full"
               value={silenceDurationMins}
               onChange={(e) => setSilenceDurationMins(e.target.value)}
             />
           </label>
-          <label className="text-xs text-zinc-500">
-            Reason (optional)
+          <label className="pulse-caption block">
+            Reason <span className="text-zinc-600">(optional)</span>
             <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-zinc-100"
+              className="pulse-input mt-1 w-full"
               value={silenceReason}
               placeholder="Deploy / drill / noise"
               onChange={(e) => setSilenceReason(e.target.value)}
             />
           </label>
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-lg border border-white/15 bg-white/5 py-2 text-sm font-medium text-zinc-100 hover:bg-white/10 disabled:opacity-50"
-          >
+          <button type="submit" disabled={busy} className="pulse-btn-secondary disabled:opacity-50">
             Add silence
           </button>
         </form>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-          <h2 className="text-sm font-semibold text-zinc-100">
-            Active silences ({silences.length})
-          </h2>
+        <div className="pulse-card-soft p-5">
+          <h2 className="pulse-h3">Active silences <span className="ml-1 text-zinc-500">({silences.length})</span></h2>
           <ul className="mt-4 flex max-h-[min(40vh,320px)] flex-col gap-2 overflow-y-auto text-xs">
             {silences.length === 0 ? (
               <li className="text-zinc-500">No active silences.</li>
@@ -752,8 +711,8 @@ export function AlertsView() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
-        <h2 className="text-sm font-semibold text-zinc-100">Last evaluation</h2>
+      <section className="pulse-card p-5">
+        <h2 className="pulse-h3">Last evaluation</h2>
         <div className="mt-4 overflow-x-auto">
           <table className="pulse-table min-w-[800px]">
             <thead>
