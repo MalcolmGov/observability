@@ -21,6 +21,7 @@ import {
   IconSun,
   IconTraces,
 } from "@/components/nav-icons";
+import { NotificationBell } from "@/components/notification-bell";
 import { usePulseTheme } from "@/components/theme-context";
 import { PULSE_PRIMARY_NAV } from "@/lib/pulse-nav";
 
@@ -225,6 +226,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 ⌘K
               </button>
+              <NotificationBell />
               <ThemeToggle className="flex size-9 shrink-0 items-center justify-center" />
             </div>
           </div>
