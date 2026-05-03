@@ -98,9 +98,9 @@ function MiniSeries({
 }
 
 function healthDot(health: OverviewPayload["services"][0]["health"]) {
-  if (health === "critical") return "bg-red-500 shadow shadow-red-500/40";
-  if (health === "degraded") return "bg-amber-400 shadow shadow-amber-400/30";
-  return "bg-emerald-400 shadow shadow-emerald-400/25";
+  if (health === "critical") return "pulse-status-dot pulse-status-dot-danger";
+  if (health === "degraded") return "pulse-status-dot pulse-status-dot-warning";
+  return "pulse-status-dot pulse-status-dot-success";
 }
 
 export function OverviewView() {
@@ -275,11 +275,7 @@ export function OverviewView() {
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="pulse-alert-error">{error}</div> : null}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map((k) => (
@@ -323,7 +319,8 @@ export function OverviewView() {
                 Errors, warnings, and ingest freshness across telemetry types.
               </p>
             </div>
-            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-500/30">
+            <span className="pulse-chip pulse-chip-success">
+              <span className="pulse-status-dot pulse-status-dot-success" />
               LIVE
             </span>
           </div>

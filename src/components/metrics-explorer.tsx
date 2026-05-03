@@ -500,11 +500,7 @@ export function MetricsExplorer() {
         </div>
       </header>
 
-      {error ? (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="pulse-alert-error">{error}</div> : null}
 
       <NlQueryPanel page="metrics" onApplyMetrics={applyNlMetrics} />
 
@@ -723,13 +719,17 @@ export function MetricsExplorer() {
                   <div className="flex items-center gap-2 text-[10px] text-zinc-500">
                     <span>{format(new Date(l.ts), "HH:mm:ss.SSS")}</span>
                     <span
-                      className={
+                      className={`pulse-loglevel ${
                         l.level === "error"
-                          ? "text-red-400"
+                          ? "pulse-loglevel-error"
                           : l.level === "warn"
-                            ? "text-amber-300"
-                            : "text-emerald-400"
-                      }
+                            ? "pulse-loglevel-warn"
+                            : l.level === "info"
+                              ? "pulse-loglevel-info"
+                              : l.level === "debug"
+                                ? "pulse-loglevel-debug"
+                                : "pulse-loglevel-trace"
+                      }`}
                     >
                       {l.level}
                     </span>

@@ -517,7 +517,7 @@ export function AlertsView() {
           <button
             type="submit"
             disabled={busy}
-            className="mt-2 rounded-lg bg-indigo-500 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+            className="pulse-btn-primary mt-2"
           >
             Save rule
           </button>
@@ -635,7 +635,7 @@ export function AlertsView() {
                       type="button"
                       disabled={busy}
                       onClick={() => void removeRule(r.id)}
-                      className="shrink-0 rounded-lg border border-red-500/30 px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                      className="pulse-transition shrink-0 rounded-md border border-[var(--pulse-border-default)] bg-white/[0.02] px-2 py-1 text-[10px] font-medium text-zinc-400 hover:border-[var(--pulse-status-danger-border)] hover:bg-[var(--pulse-status-danger-bg)] hover:text-[var(--pulse-status-danger-fg)] disabled:opacity-50"
                     >
                       Delete
                     </button>
@@ -755,16 +755,16 @@ export function AlertsView() {
       <section className="rounded-2xl border border-white/10 bg-slate-950/50 p-5">
         <h2 className="text-sm font-semibold text-zinc-100">Last evaluation</h2>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[800px] border-collapse text-left text-xs">
+          <table className="pulse-table min-w-[800px]">
             <thead>
-              <tr className="border-b border-white/10 text-[10px] uppercase text-zinc-500">
-                <th className="py-2 pr-3">Rule</th>
-                <th className="py-2 pr-3">Metric / service</th>
-                <th className="py-2 pr-3">Observed avg</th>
-                <th className="py-2 pr-3">Threshold</th>
-                <th className="py-2 pr-3">Runbook</th>
-                <th className="py-2 pr-3">Silenced</th>
-                <th className="py-2">State</th>
+              <tr>
+                <th>Rule</th>
+                <th>Metric / service</th>
+                <th>Observed avg</th>
+                <th>Threshold</th>
+                <th>Runbook</th>
+                <th>Silenced</th>
+                <th>State</th>
               </tr>
             </thead>
             <tbody>
@@ -854,14 +854,14 @@ export function AlertsView() {
           </button>
         </div>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+          <table className="pulse-table min-w-[720px]">
             <thead>
-              <tr className="border-b border-white/10 text-[10px] uppercase text-zinc-500">
-                <th className="py-2 pr-3">Time</th>
-                <th className="py-2 pr-3">Rule</th>
-                <th className="py-2 pr-3">Observed</th>
-                <th className="py-2 pr-3">Silenced</th>
-                <th className="py-2">Firing</th>
+              <tr>
+                <th>Time</th>
+                <th>Rule</th>
+                <th>Observed</th>
+                <th>Silenced</th>
+                <th>Firing</th>
               </tr>
             </thead>
             <tbody>

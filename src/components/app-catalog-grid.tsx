@@ -78,17 +78,19 @@ function healthFromApm(services: ApmServiceRow[]): Omit<CatalogCell, "catalogSer
 }
 
 function cellSurfaceClass(health: CellHealth): string {
+  // Active cells use semantic chip tokens + lift on hover.
+  // Empty cells recede strongly so active cells pop.
   switch (health) {
     case "loading":
-      return "animate-pulse bg-zinc-800/40 ring-1 ring-white/[0.06]";
+      return "pulse-skeleton ring-1 ring-white/[0.04] text-transparent";
     case "empty":
-      return "bg-zinc-900/50 ring-1 ring-white/[0.06] text-zinc-600";
+      return "bg-white/[0.012] ring-1 ring-white/[0.04] text-zinc-600 opacity-70 hover:opacity-100 hover:bg-white/[0.02]";
     case "ok":
-      return "bg-emerald-500/10 ring-1 ring-emerald-500/25 text-emerald-100/90 hover:bg-emerald-500/15";
+      return "pulse-cell-ok";
     case "warn":
-      return "bg-amber-500/12 ring-1 ring-amber-400/30 text-amber-50 hover:bg-amber-500/18";
+      return "pulse-cell-warn";
     case "critical":
-      return "bg-rose-500/14 ring-1 ring-rose-400/35 text-rose-50 hover:bg-rose-500/20";
+      return "pulse-cell-critical";
     default:
       return "";
   }
@@ -230,24 +232,24 @@ export function AppCatalogGrid() {
         </p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-white/[0.08] bg-slate-950/40 shadow-inner shadow-black/20">
+      <div className="pulse-fade-in overflow-x-auto rounded-2xl border border-[var(--pulse-border-default)] bg-slate-950/40 shadow-inner shadow-black/20">
         <table className="w-full min-w-[720px] border-collapse text-left text-sm">
           <caption className="sr-only">
             Application catalog health by product row and market column
           </caption>
           <thead>
-            <tr className="border-b border-white/[0.08] bg-slate-950/80">
+            <tr>
               <th
                 scope="col"
-                className="sticky left-0 z-[1] bg-slate-950/95 px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-zinc-500"
+                className="pulse-eyebrow sticky left-0 z-[1] bg-slate-950/95 px-4 py-3"
               >
-                Product \ Market
+                Product
               </th>
               {markets.map((m) => (
                 <th
                   key={m}
                   scope="col"
-                  className="px-2 py-2.5 text-center text-xs font-semibold tracking-wide text-zinc-300"
+                  className="px-2 py-3 text-center text-[11px] font-semibold tracking-wide text-zinc-300"
                 >
                   {m}
                 </th>
@@ -255,14 +257,15 @@ export function AppCatalogGrid() {
             </tr>
           </thead>
           <tbody>
-            {GRID_PRODUCTS.map((product) => (
+            {GRID_PRODUCTS.map((product, idx) => (
               <tr
                 key={product}
-                className="border-b border-white/[0.05] last:border-b-0"
+                className="border-t border-[var(--pulse-border-light)]"
+                style={{ animationDelay: `${idx * 60}ms` }}
               >
                 <th
                   scope="row"
-                  className="sticky left-0 z-[1] bg-slate-950/90 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400"
+                  className="pulse-title sticky left-0 z-[1] bg-slate-950/92 px-4 py-3 text-zinc-100"
                 >
                   {productLabel(product)}
                 </th>
@@ -288,30 +291,64 @@ export function AppCatalogGrid() {
                       : null,
                   ].filter(Boolean);
 
+                  const dotClass =
+                    health === "ok"
+                      ? "pulse-status-dot-success"
+                      : health === "warn"
+                        ? "pulse-status-dot-warning"
+                        : health === "critical"
+                          ? "pulse-status-dot-danger"
+                          : health === "empty"
+                            ? "pulse-status-dot-neutral opacity-30"
+                            : "";
+
                   return (
                     <td key={market} className="p-1 align-middle">
                       <Link
                         href={href}
-                        className={`flex min-h-[3.25rem] flex-col justify-center rounded-lg px-2 py-2 text-center transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 ${surface}`}
+                        className={`pulse-transition relative flex min-h-[3.5rem] w-full flex-col items-center justify-center rounded-lg px-2 py-2 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 ${surface}`}
                         title={titleParts.join(" · ")}
                         aria-label={`Open services for ${product} in ${market}`}
                       >
                         {health === "loading" ? (
-                          <span className="mx-auto h-2 w-10 rounded-full bg-zinc-700/80" />
+                          <span className="mx-auto h-2 w-10 rounded-full bg-white/10" />
+                        ) : health === "empty" ? (
+                          <>
+                            <span
+                              className={`pulse-status-dot ${dotClass} mb-1`}
+                              aria-hidden
+                            />
+                            <span className="text-[10px] uppercase tracking-wide text-zinc-600">
+                              no traffic
+                            </span>
+                          </>
                         ) : (
                           <>
-                            <span className="text-[11px] font-semibold tabular-nums">
-                              {cell!.catalogServiceCount > 0
-                                ? cell!.catalogServiceCount
-                                : "—"}
+                            <span className="absolute left-1.5 top-1.5">
+                              <span
+                                className={`pulse-status-dot ${dotClass}`}
+                                aria-hidden
+                              />
                             </span>
-                            <span className="text-[10px] leading-tight text-zinc-500">
+                            <span className="pulse-mono-num text-base font-semibold leading-none">
                               {cell!.apmServiceCount > 0 &&
                               cell!.worstErrorRate != null
-                                ? `${(cell!.worstErrorRate * 100).toFixed(1)}% err`
-                                : cell!.apmServiceCount === 0
-                                  ? "no traffic"
-                                  : "—"}
+                                ? `${(cell!.worstErrorRate * 100).toFixed(1)}%`
+                                : "0%"}
+                            </span>
+                            <span className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-current opacity-75">
+                              <span className="pulse-mono-num">
+                                {cell!.apmServiceCount}{" "}
+                                {cell!.apmServiceCount === 1 ? "svc" : "svcs"}
+                              </span>
+                              {cell!.worstP95Ms != null ? (
+                                <span className="opacity-60">·</span>
+                              ) : null}
+                              {cell!.worstP95Ms != null ? (
+                                <span className="pulse-mono-num">
+                                  {Math.round(cell!.worstP95Ms)}ms
+                                </span>
+                              ) : null}
                             </span>
                           </>
                         )}
@@ -325,25 +362,22 @@ export function AppCatalogGrid() {
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-zinc-500">
-        <span className="font-medium text-zinc-400">Legend</span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-emerald-500/35 ring ring-emerald-500/30" />{" "}
-          Healthy
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pl-1">
+        <span className="pulse-eyebrow">Legend</span>
+        <span className="pulse-chip pulse-chip-success">
+          <span className="pulse-status-dot pulse-status-dot-success" /> Healthy
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-amber-500/35 ring ring-amber-400/30" />{" "}
-          Elevated latency or errors
+        <span className="pulse-chip pulse-chip-warning">
+          <span className="pulse-status-dot pulse-status-dot-warning" /> Elevated
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-rose-500/35 ring ring-rose-400/35" />{" "}
-          Critical
+        <span className="pulse-chip pulse-chip-danger">
+          <span className="pulse-status-dot pulse-status-dot-danger" /> Critical
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-zinc-800 ring ring-white/10" />{" "}
-          No traffic in window
+        <span className="pulse-chip pulse-chip-neutral">
+          <span className="pulse-status-dot pulse-status-dot-neutral" /> No
+          traffic
         </span>
-        <span className="text-zinc-600">
+        <span className="ml-auto text-[11px] text-zinc-600">
           Window {WINDOW_MS / 3_600_000}h · Click a cell for scoped Services
         </span>
       </div>

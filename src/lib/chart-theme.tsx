@@ -6,31 +6,60 @@ export const pulseChartTooltipStyle: CSSProperties = {
   border: "1px solid var(--pulse-chart-tooltip-border)",
   borderRadius: 12,
   fontSize: 12,
-  padding: "10px 12px",
+  fontVariantNumeric: "tabular-nums",
+  padding: "10px 14px",
   boxShadow: "var(--pulse-chart-tooltip-shadow)",
+  backdropFilter: "blur(12px)",
+  WebkitBackdropFilter: "blur(12px)",
 };
 
 export const pulseChartTooltipLabelStyle: CSSProperties = {
   color: "var(--pulse-chart-tooltip-label)",
-  marginBottom: 4,
+  marginBottom: 6,
+  fontSize: 10,
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+};
+
+export const pulseChartTooltipItemStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 500,
+  padding: "1px 0",
+  fontVariantNumeric: "tabular-nums",
 };
 
 export const pulseChartAxisTick = {
   fill: "var(--pulse-chart-axis-fill)",
   fontSize: 11,
+  fontWeight: 500,
 };
 
 export const pulseChartAxisTickDense = {
   fill: "var(--pulse-chart-axis-fill-dense)",
   fontSize: 10,
+  fontWeight: 500,
 };
 
 /** Legend wrapper — set `color` so HTML legend items inherit in both themes */
 export const pulseChartLegendWrapperStyle: CSSProperties = {
   fontSize: 11,
-  paddingTop: 8,
+  paddingTop: 12,
   color: "var(--pulse-chart-legend-text)",
+  fontWeight: 500,
 };
+
+/** Premium dot styling for line/area chart endpoints. Pass to Recharts <Line dot={...}>. */
+export const pulseChartLineDot = {
+  r: 0,
+  strokeWidth: 0,
+} as const;
+
+export const pulseChartLineActiveDot = {
+  r: 4,
+  strokeWidth: 2,
+  stroke: "var(--pulse-chart-tooltip-bg)",
+} as const;
 
 export const pulseChartGridStroke = "var(--pulse-chart-grid-stroke)";
 

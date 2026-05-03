@@ -311,21 +311,21 @@ export function ServicesView() {
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/50 shadow-lg shadow-slate-950/25">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-white/10 bg-slate-950/35 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+      <div className="pulse-fade-in overflow-x-auto rounded-2xl border border-[var(--pulse-border-default)] bg-slate-950/50 shadow-lg shadow-slate-950/25">
+        <table className="pulse-table min-w-[720px]">
+          <thead>
             <tr>
-              <th className="px-4 py-3">Service</th>
-              <th className="px-4 py-3 text-right tabular-nums">Traces</th>
-              <th className="px-4 py-3 text-right tabular-nums">Requests</th>
-              <th className="px-4 py-3 text-right tabular-nums">Err rate</th>
-              <th className="px-4 py-3 text-right tabular-nums">p50</th>
-              <th className="px-4 py-3 text-right tabular-nums">p95</th>
-              <th className="px-4 py-3 text-right tabular-nums">p99</th>
-              <th className="px-4 py-3 text-right">Drill-in</th>
+              <th>Service</th>
+              <th className="text-right">Traces</th>
+              <th className="text-right">Requests</th>
+              <th className="text-right">Err rate</th>
+              <th className="text-right">p50</th>
+              <th className="text-right">p95</th>
+              <th className="text-right">p99</th>
+              <th className="text-right">Drill-in</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody>
             {loading ? (
               <tr>
                 <td colSpan={8} className="px-4 py-12 text-center text-zinc-500">
@@ -436,17 +436,17 @@ export function ServicesView() {
               <code className="text-zinc-400">http.route</code> or span name ·{" "}
               <span className="text-zinc-300">{focusService}</span>
             </p>
-            <div className="mt-3 max-h-64 overflow-auto rounded-xl border border-white/5">
-              <table className="w-full text-left text-[11px]">
-                <thead className="sticky top-0 bg-slate-950/95 text-[10px] font-semibold uppercase text-zinc-500">
+            <div className="mt-3 max-h-64 overflow-auto rounded-xl border border-[var(--pulse-border-light)]">
+              <table className="pulse-table">
+                <thead>
                   <tr>
-                    <th className="px-2 py-2">Resource</th>
-                    <th className="px-2 py-2 text-right tabular-nums">Req</th>
-                    <th className="px-2 py-2 text-right tabular-nums">Err%</th>
-                    <th className="px-2 py-2 text-right tabular-nums">p95</th>
+                    <th>Resource</th>
+                    <th className="text-right">Req</th>
+                    <th className="text-right">Err%</th>
+                    <th className="text-right">p95</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody>
                   {operations.length === 0 ? (
                     <tr>
                       <td

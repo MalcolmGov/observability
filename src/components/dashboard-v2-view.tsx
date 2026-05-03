@@ -575,27 +575,32 @@ export function DashboardV2View() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((k) => (
-          <div key={k.label} className="pulse-card p-5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-              {k.label}
-            </div>
-            <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white">
+          <div key={k.label} className="pulse-card pulse-fade-in p-5">
+            <div className="pulse-eyebrow">{k.label}</div>
+            <div className="pulse-display-num mt-2">
               {loading && !data ? "—" : k.value}
             </div>
-            <div className="mt-1 text-[12px] text-zinc-500">{k.hint}</div>
+            <div className="pulse-caption mt-1">{k.hint}</div>
           </div>
         ))}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         <div
-          className={`pulse-card p-5 transition ${
+          className="pulse-card pulse-transition p-5"
+          style={
             sloInsight?.status === "burn"
-              ? "ring-1 ring-red-500/45 shadow-red-950/25"
+              ? {
+                  boxShadow:
+                    "inset 0 0 0 1px var(--pulse-status-danger-border), 0 12px 28px -10px var(--pulse-status-danger-glow)",
+                }
               : sloInsight?.status === "warn"
-                ? "ring-1 ring-amber-500/35 shadow-amber-950/15"
-                : ""
-          }`}
+                ? {
+                    boxShadow:
+                      "inset 0 0 0 1px var(--pulse-status-warning-border), 0 12px 28px -10px var(--pulse-status-warning-glow)",
+                  }
+                : undefined
+          }
         >
           <h2 className="text-sm font-semibold text-white">
             SLO snapshot

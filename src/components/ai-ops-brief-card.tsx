@@ -74,7 +74,10 @@ export function AiOpsBriefCard() {
             {busy ? "Generating…" : "Generate AI Ops brief"}
           </button>
           {openAi === false ? (
-            <p className="max-w-xs text-right text-[11px] leading-snug text-amber-200/90">
+            <p
+              className="max-w-xs text-right text-[11px] leading-snug"
+              style={{ color: "var(--pulse-status-warning-fg)" }}
+            >
               Set{" "}
               <code className="rounded bg-white/[0.06] px-1 py-0.5 text-[10px] text-zinc-300">
                 OPENAI_API_KEY
@@ -85,52 +88,46 @@ export function AiOpsBriefCard() {
         </div>
       </div>
 
-      {error ? (
-        <p className="mt-4 rounded-xl border border-red-500/30 bg-red-950/25 px-4 py-3 text-sm text-red-200">
-          {error}
-        </p>
-      ) : null}
+      {error ? <p className="pulse-alert-error mt-4">{error}</p> : null}
 
       {brief ? (
-        <div className="mt-6 space-y-5 border-t border-white/[0.06] pt-6">
+        <div className="pulse-fade-in mt-6 space-y-5 border-t border-[var(--pulse-border-default)] pt-6">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-              Headline
-            </p>
+            <p className="pulse-eyebrow">Headline</p>
             <p className="mt-1 text-lg font-semibold tracking-tight text-zinc-50">
               {brief.headline}
             </p>
           </div>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-              Narrative
-            </p>
+            <p className="pulse-eyebrow">Narrative</p>
             <p className="mt-2 text-[15px] leading-relaxed text-zinc-300">
               {brief.narrative}
             </p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                Risks & focus
-              </p>
+              <p className="pulse-eyebrow">Risks &amp; focus</p>
               <ul className="mt-2 space-y-2 text-[13px] leading-snug text-zinc-400">
                 {brief.risks.map((line, i) => (
                   <li key={i} className="flex gap-2">
-                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-amber-400/80" />
+                    <span
+                      className="pulse-status-dot pulse-status-dot-warning mt-1.5 shrink-0"
+                      aria-hidden
+                    />
                     <span>{line}</span>
                   </li>
                 ))}
               </ul>
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                Recommended actions
-              </p>
+              <p className="pulse-eyebrow">Recommended actions</p>
               <ul className="mt-2 space-y-2 text-[13px] leading-snug text-zinc-400">
                 {brief.actions.map((line, i) => (
                   <li key={i} className="flex gap-2">
-                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-emerald-400/80" />
+                    <span
+                      className="pulse-status-dot pulse-status-dot-success mt-1.5 shrink-0"
+                      aria-hidden
+                    />
                     <span>{line}</span>
                   </li>
                 ))}
