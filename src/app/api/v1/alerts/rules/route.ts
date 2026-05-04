@@ -10,6 +10,7 @@ import {
 import { isPostgres } from "@/lib/sql-dialect";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getCurrentUser } from "@/lib/auth";
 
 type RuleDbRow = {
   id: number;
@@ -99,6 +100,11 @@ const postSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (user.role === "viewer") {
+    return NextResponse.json({ error: "Viewers cannot create alert rules." }, { status: 403 });
+  }
+
   let json: unknown;
   try {
     json = await req.json();
@@ -168,6 +174,11 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const user = await getCurrentUser();
+  if (user.role === "viewer") {
+    return NextResponse.json({ error: "Viewers cannot delete alert rules." }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
   const id = Number(searchParams.get("id"));
   if (!Number.isFinite(id)) {
@@ -207,6 +218,11 @@ const patchSchema = z
 
 /** Update URLs, runbook, scope columns on an existing rule. */
 export async function PATCH(req: Request) {
+  const user = await getCurrentUser();
+  if (user.role === "viewer") {
+    return NextResponse.json({ error: "Viewers cannot edit alert rules." }, { status: 403 });
+  }
+
   let json: unknown;
   try {
     json = await req.json();

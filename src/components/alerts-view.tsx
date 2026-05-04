@@ -65,7 +65,11 @@ type Incident = {
   evaluatedAtMs: number;
 };
 
+import { useAuth } from "@/components/auth-provider";
+
 export function AlertsView() {
+  const { user } = useAuth();
+  const isViewer = user?.role === "viewer";
   const [rules, setRules] = useState<Rule[]>([]);
   const [evalRows, setEvalRows] = useState<EvalRow[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -770,9 +774,17 @@ export function AlertsView() {
               ? "Fires when the error burn rate exceeds the multiplier threshold. An SLO target must exist for the service (via PUT /api/v1/slo/targets)."
               : "Firing rules notify via webhook (pulse.alert.firing), Slack, or PagerDuty Events v2."}
           </p>
-          <button type="submit" disabled={busy} className="pulse-btn-primary mt-2 disabled:opacity-50">
-            Save rule
-          </button>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={busy || isViewer}
+              className="pulse-btn-primary disabled:opacity-50"
+              title={isViewer ? "Viewers cannot create alert rules." : ""}
+            >
+              Save rule
+            </button>
+            {isViewer && <span className="text-[11px] text-amber-500">Viewers cannot create rules</span>}
+          </div>
         </form>
 
         <div className="pulse-card-soft p-5">
@@ -809,30 +821,33 @@ export function AlertsView() {
                         {r.pagerdutyRoutingKey ? " · pagerduty" : ""}
                         {r.runbookUrl ? " · runbook" : ""}
                       </div>
-                      <label className="mt-2 block text-[10px] text-zinc-600">
-                        Webhook
-                        <input
-                          key={`${r.id}-wh-${r.webhookUrl ?? ""}`}
-                          disabled={busy}
-                          defaultValue={r.webhookUrl ?? ""}
-                          placeholder="https://…"
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            const prev = r.webhookUrl ?? "";
-                            if (v !== prev)
-                              void patchRule(
-                                r.id,
-                                { webhook_url: v },
-                                "Webhook update failed",
-                              );
-                          }}
-                          className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
-                        />
-                      </label>
-                      <label className="mt-2 block text-[10px] text-zinc-600">
-                        Slack webhook
-                        <input
-                          key={`${r.id}-sl-${r.slackWebhookUrl ?? ""}`}
+                      
+                      {!isViewer && (
+                        <>
+                          <label className="mt-2 block text-[10px] text-zinc-600">
+                            Webhook
+                            <input
+                              key={`${r.id}-wh-${r.webhookUrl ?? ""}`}
+                              disabled={busy}
+                              defaultValue={r.webhookUrl ?? ""}
+                              placeholder="https://…"
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                const prev = r.webhookUrl ?? "";
+                                if (v !== prev)
+                                  void patchRule(
+                                    r.id,
+                                    { webhook_url: v },
+                                    "Webhook update failed",
+                                  );
+                              }}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
+                            />
+                          </label>
+                          <label className="mt-2 block text-[10px] text-zinc-600">
+                            Slack webhook
+                            <input
+                              key={`${r.id}-sl-${r.slackWebhookUrl ?? ""}`}
                           disabled={busy}
                           defaultValue={r.slackWebhookUrl ?? ""}
                           placeholder="https://hooks.slack.com/…"

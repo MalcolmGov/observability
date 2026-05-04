@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./pulse-light.css";
 import { ThemeProvider } from "@/components/theme-context";
+import { AuthProvider } from "@/components/auth-provider";
 import { PULSE_THEME_INLINE_SCRIPT } from "@/lib/pulse-theme-script";
 
 const geistSans = Geist({
@@ -34,12 +35,14 @@ export default function RootLayout({
       <body className="pulse-page-bg min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: PULSE_THEME_INLINE_SCRIPT }} />
         <ThemeProvider>
-          <a href="#main-content" className="pulse-skip-link">
-            Skip to main content
-          </a>
-          <div className="pulse-main-inner flex min-h-full flex-1 flex-col">
-            {children}
-          </div>
+          <AuthProvider>
+            <a href="#main-content" className="pulse-skip-link">
+              Skip to main content
+            </a>
+            <div className="pulse-main-inner flex min-h-full flex-1 flex-col">
+              {children}
+            </div>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

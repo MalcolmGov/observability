@@ -2,6 +2,7 @@ import { queryAll, queryRun } from "@/db/client";
 import { getTelemetryTenantIdFromRequest } from "@/lib/telemetry-tenant";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getCurrentUser } from "@/lib/auth";
 
 const postSchema = z.object({
   ruleId: z.union([z.number().int().positive(), z.null()]).optional(),
@@ -45,6 +46,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (user.role === "viewer") {
+    return NextResponse.json({ error: "Viewers cannot silence alerts." }, { status: 403 });
+  }
+
   const tenantId = getTelemetryTenantIdFromRequest(req);
   let json: unknown;
   try {
@@ -100,6 +106,11 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const user = await getCurrentUser();
+  if (user.role === "viewer") {
+    return NextResponse.json({ error: "Viewers cannot delete silences." }, { status: 403 });
+  }
+
   const tenantId = getTelemetryTenantIdFromRequest(req);
   const id = Number(new URL(req.url).searchParams.get("id"));
   if (!Number.isFinite(id) || id <= 0) {

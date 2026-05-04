@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { SetupWizard } from "@/components/setup-wizard";
 
 /* ─── Injected styles ────────────────────────────────────────── */
 const CSS = `
@@ -157,6 +158,7 @@ export function GettingStartedView() {
   ]);
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const check = useCallback(async () => {
     try {
@@ -244,12 +246,19 @@ export function GettingStartedView() {
 
           {/* CTAs */}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <button type="button" onClick={() => void seed()} disabled={seeding}
-              className="inline-flex items-center gap-2.5 rounded-2xl px-6 py-3 text-sm font-bold transition-all disabled:opacity-60"
-              style={{ background:"linear-gradient(135deg, rgba(6,214,199,0.2), rgba(56,189,248,0.15))", color:"#a1f0eb", border:"1px solid rgba(6,214,199,0.4)", boxShadow:"0 0 24px rgba(6,214,199,0.15)" }}
+            <button type="button" onClick={() => setWizardOpen(true)}
+              className="inline-flex items-center gap-2.5 rounded-2xl px-6 py-3 text-sm font-bold transition-all shadow-[0_0_24px_rgba(6,214,199,0.15)]"
+              style={{ background:"linear-gradient(135deg, rgba(6,214,199,0.2), rgba(56,189,248,0.15))", color:"#a1f0eb", border:"1px solid rgba(6,214,199,0.4)" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 32px rgba(6,214,199,0.3)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(6,214,199,0.15)"; }}>
-              {seeding ? <><span className="animate-spin">⏳</span> Loading…</> : <>🚀 Load Demo Data</>}
+              ✨ Launch Setup Wizard
+            </button>
+            <button type="button" onClick={() => void seed()} disabled={seeding}
+              className="inline-flex items-center gap-2.5 rounded-2xl px-6 py-3 text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background:"rgba(255,255,255,0.05)", color:"#e4e4e7", border:"1px solid rgba(255,255,255,0.12)" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.09)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; }}>
+              {seeding ? <><span className="animate-spin">⏳</span> Loading…</> : <>Load Demo Data</>}
             </button>
             <Link href="/integrations"
               className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-semibold transition-all"
@@ -379,6 +388,14 @@ export function GettingStartedView() {
           </div>
         </div>
       </section>
+
+      {/* Setup Wizard Modal */}
+      {wizardOpen && (
+        <SetupWizard onClose={() => {
+          setWizardOpen(false);
+          void check();
+        }} />
+      )}
     </div>
   );
 }

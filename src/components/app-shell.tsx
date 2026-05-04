@@ -35,6 +35,58 @@ import { NotificationBell } from "@/components/notification-bell";
 import { usePulseTheme } from "@/components/theme-context";
 import { PULSE_PRIMARY_NAV } from "@/lib/pulse-nav";
 import { useSystemHealth } from "@/hooks/use-system-health";
+import { useAuth } from "@/components/auth-provider";
+
+function PersonaSwitcher() {
+  const { user, availablePersonas, switchPersona, loading } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  if (!user) return null;
+
+  return (
+    <div className="relative mt-2 px-1.5 pb-2">
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={loading}
+        className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-white/[0.04]"
+        title="Switch persona"
+      >
+        <img src={user.avatarUrl} alt="" className="size-6 shrink-0 rounded-full bg-zinc-800" />
+        <div className="flex-1 min-w-0">
+          <div className="truncate text-[12px] font-semibold text-zinc-200">{user.name}</div>
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500">{user.role}</div>
+        </div>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full left-1.5 z-50 mb-1 w-56 rounded-xl border border-white/[0.1] bg-[#0f172a] p-1 shadow-xl">
+            <div className="px-2 py-1.5 text-[10px] font-semibold uppercase text-zinc-500">Switch Persona (RBAC)</div>
+            {availablePersonas.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => {
+                  setOpen(false);
+                  void switchPersona(p.id);
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${
+                  p.id === user.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"
+                }`}
+              >
+                <img src={p.avatarUrl} alt="" className="size-6 shrink-0 rounded-full bg-zinc-800" />
+                <div>
+                  <div className="text-[13px] text-zinc-200">{p.name}</div>
+                  <div className="text-[11px] text-zinc-500">{p.email}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function SystemHealthBadge() {
   const h = useSystemHealth();
@@ -257,6 +309,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               LOCAL DEV
             </span>
           </div>
+          <PersonaSwitcher />
         </div>
       </aside>
 
@@ -340,7 +393,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               {/* Footer */}
               <div className="border-t px-4 py-4" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-                <div className="text-[11px] text-zinc-600">Pulse Observability · Local Dev</div>
+                <div className="mb-2 text-[11px] text-zinc-600">Pulse Observability · Local Dev</div>
+                <div className="mx-[-6px]">
+                  <PersonaSwitcher />
+                </div>
               </div>
             </nav>
           </div>

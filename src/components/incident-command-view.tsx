@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
+import { useAuth } from "@/components/auth-provider";
 
 // ── Types ────────────────────────────────────────────────────────
 type Severity = "critical" | "warning" | "info";
@@ -104,6 +105,8 @@ function IncidentDetail({
   history: HistoryEntry[];
   onSilence: (ruleId: number) => Promise<void>;
 }) {
+  const { user } = useAuth();
+  const isViewer = user?.role === "viewer";
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [silencing, setSilencing] = useState(false);
   const s = SEV[incident.severity];
@@ -193,13 +196,17 @@ function IncidentDetail({
               📓 Runbook
             </a>
           )}
-          <button type="button" onClick={() => void handleSilence()} disabled={silencing}
-            className="rounded-xl px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
-            style={{ background: "rgba(167,139,250,0.08)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.22)" }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(167,139,250,0.15)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(167,139,250,0.08)"; }}>
-            {silencing ? "Silencing…" : "🔇 Silence 1h"}
-          </button>
+          {isViewer ? (
+            <span className="self-center px-2 text-[11px] text-amber-500">Viewers cannot silence incidents</span>
+          ) : (
+            <button type="button" onClick={() => void handleSilence()} disabled={silencing}
+              className="rounded-xl px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
+              style={{ background: "rgba(167,139,250,0.08)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.22)" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(167,139,250,0.15)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(167,139,250,0.08)"; }}>
+              {silencing ? "Silencing…" : "🔇 Silence 1h"}
+            </button>
+          )}
         </div>
 
         {/* Sparkline + current value */}

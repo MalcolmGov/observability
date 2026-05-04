@@ -361,6 +361,28 @@ function migrateSloBurnAlertCols(sqlite: InstanceType<typeof Database>) {
   }
 }
 
+/** Creates and seeds the users table for RBAC. */
+function migrateUsersTable(sqlite: InstanceType<typeof Database>) {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin', 'responder', 'viewer')),
+      avatar_url TEXT
+    );
+  `);
+  
+  // Seed default personas if the table is empty
+  const countRow = sqlite.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number };
+  if (countRow.c === 0) {
+    const insert = sqlite.prepare("INSERT INTO users (id, email, name, role, avatar_url) VALUES (?, ?, ?, ?, ?)");
+    insert.run("u_admin", "admin@pulse.local", "Alex (Admin)", "admin", "https://api.dicebear.com/9.x/notionists/svg?seed=Alex");
+    insert.run("u_responder", "oncall@pulse.local", "Riley (Responder)", "responder", "https://api.dicebear.com/9.x/notionists/svg?seed=Riley");
+    insert.run("u_viewer", "exec@pulse.local", "Taylor (Viewer)", "viewer", "https://api.dicebear.com/9.x/notionists/svg?seed=Taylor");
+  }
+}
+
 function initSqlite() {
   fs.mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(dbPath);
@@ -526,6 +548,7 @@ CREATE INDEX IF NOT EXISTS alert_notification_log_dedupe_idx ON alert_notificati
   migrateAlertRoutesAndSeverity(sqlite);
   migrateLogPatternAlertCols(sqlite);
   migrateSloBurnAlertCols(sqlite);
+  migrateUsersTable(sqlite);
 
   return sqlite;
 }
