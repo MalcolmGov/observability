@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useAuth } from "@/components/auth-provider";
+import { generateIncidentRcaAction } from "@/app/actions/incident-rca";
 
 // ── Types ────────────────────────────────────────────────────────
 type Severity = "critical" | "warning" | "info";
@@ -91,6 +92,89 @@ function TimelineRow({ entry }: { entry: HistoryEntry }) {
         )}
         <span className="ml-2 text-zinc-600">{format(new Date(entry.evaluatedAtMs), "HH:mm:ss")}</span>
       </div>
+    </div>
+  );
+}
+
+// ── AI Root Cause Analysis Panel ─────────────────────────────────
+function AiRcaPanel({ incident, logs }: { incident: Incident; logs: LogEntry[] }) {
+  const [rcaResult, setRcaResult] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await generateIncidentRcaAction(
+        {
+          ruleName: incident.ruleName,
+          service: incident.service,
+          severity: incident.severity,
+          metricStr: incident.metricName ? `${incident.metricName} ${incident.comparator} ${incident.threshold}` : null,
+          observedAvg: incident.observedAvg,
+          evaluatedAtMs: incident.evaluatedAtMs,
+        },
+        logs
+      );
+      if (res.success) {
+        setRcaResult(res.markdown);
+      } else {
+        setError(res.error);
+      }
+    } catch (err: any) {
+      setError("Failed to reach AI service.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderMarkdown = (text: string) => {
+    // A very lightweight parser to handle bold and newlines
+    let html = text
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/### (.*?)\n/g, '<h3 className="mt-4 mb-2 text-[13px] font-bold text-white">$1</h3>')
+      .replace(/- (.*)/g, '<li className="ml-4 list-disc">$1</li>')
+      .replace(/1\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+      .replace(/2\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+      .replace(/\n/g, "<br/>");
+    return <div dangerouslySetInnerHTML={{ __html: html }} className="text-[12px] leading-relaxed text-zinc-300" />;
+  };
+
+  return (
+    <div className="rounded-xl p-4 mt-5" style={{ background: "rgba(167,139,250,0.05)", border: "1px solid rgba(167,139,250,0.2)" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🧠</span>
+          <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "#a78bfa" }}>AI Root Cause Analysis</span>
+        </div>
+        {!rcaResult && !loading && (
+          <button onClick={handleGenerate} className="pulse-btn-secondary px-3 py-1 text-[11px]" style={{ color: "#a78bfa" }}>
+            Generate Brief ✨
+          </button>
+        )}
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-[12px] text-zinc-400">
+          <span className="animate-spin">⏳</span> Analyzing logs and telemetry...
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded border border-red-500/20 bg-red-500/10 p-2 text-[11px] text-red-400">
+          {error}
+        </div>
+      )}
+
+      {rcaResult && !loading && (
+        <div className="mt-2 rounded bg-black/20 p-3">
+          {renderMarkdown(rcaResult)}
+          <div className="mt-3 text-right">
+             <button onClick={handleGenerate} className="text-[10px] text-zinc-500 hover:text-zinc-300">Regenerate ↺</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -257,6 +341,9 @@ function IncidentDetail({
             View all logs →
           </a>
         </div>
+
+        {/* AI Copilot Panel */}
+        <AiRcaPanel incident={incident} logs={logs} />
 
       </div>
     </div>
