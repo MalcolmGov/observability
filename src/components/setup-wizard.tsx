@@ -180,7 +180,7 @@ export function SetupWizard({ onClose }: SetupWizardProps) {
                     className="pulse-select mt-1.5 w-full bg-slate-900"
                   >
                     <option value="metric">Metric (e.g. Latency &gt; 500ms)</option>
-                    <option value="log_count">Log Pattern (e.g. > 50 Errors)</option>
+                    <option value="log_count">Log Pattern (e.g. &gt; 50 Errors)</option>
                   </select>
                 </label>
               </div>

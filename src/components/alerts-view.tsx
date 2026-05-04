@@ -848,66 +848,68 @@ export function AlertsView() {
                             Slack webhook
                             <input
                               key={`${r.id}-sl-${r.slackWebhookUrl ?? ""}`}
-                          disabled={busy}
-                          defaultValue={r.slackWebhookUrl ?? ""}
-                          placeholder="https://hooks.slack.com/…"
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            const prev = r.slackWebhookUrl ?? "";
-                            if (v !== prev)
-                              void patchRule(
-                                r.id,
-                                { slack_webhook_url: v },
-                                "Slack URL update failed",
-                              );
-                          }}
-                          className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
-                        />
-                      </label>
-                      <label className="mt-2 block text-[10px] text-zinc-600">
-                        PagerDuty routing key
-                        <input
-                          key={`${r.id}-pd-${r.pagerdutyRoutingKey ?? ""}`}
-                          disabled={busy}
-                          defaultValue={r.pagerdutyRoutingKey ?? ""}
-                          placeholder="routing key"
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            const prev = r.pagerdutyRoutingKey ?? "";
-                            if (v !== prev)
-                              void patchRule(
-                                r.id,
-                                { pagerduty_routing_key: v },
-                                "PagerDuty key update failed",
-                              );
-                          }}
-                          className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
-                        />
-                      </label>
-                      <label className="mt-2 block text-[10px] text-zinc-600">
-                        Runbook
-                        <input
-                          key={`${r.id}-rb-${r.runbookUrl ?? ""}`}
-                          disabled={busy}
-                          defaultValue={r.runbookUrl ?? ""}
-                          placeholder="https://…"
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            const prev = r.runbookUrl ?? "";
-                            if (v !== prev)
-                              void patchRule(
-                                r.id,
-                                { runbook_url: v },
-                                "Runbook update failed",
-                              );
-                          }}
-                          className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
-                        />
-                      </label>
+                              disabled={busy}
+                              defaultValue={r.slackWebhookUrl ?? ""}
+                              placeholder="https://hooks.slack.com/…"
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                const prev = r.slackWebhookUrl ?? "";
+                                if (v !== prev)
+                                  void patchRule(
+                                    r.id,
+                                    { slack_webhook_url: v },
+                                    "Slack URL update failed",
+                                  );
+                              }}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
+                            />
+                          </label>
+                          <label className="mt-2 block text-[10px] text-zinc-600">
+                            PagerDuty routing key
+                            <input
+                              key={`${r.id}-pd-${r.pagerdutyRoutingKey ?? ""}`}
+                              disabled={busy}
+                              defaultValue={r.pagerdutyRoutingKey ?? ""}
+                              placeholder="routing key"
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                const prev = r.pagerdutyRoutingKey ?? "";
+                                if (v !== prev)
+                                  void patchRule(
+                                    r.id,
+                                    { pagerduty_routing_key: v },
+                                    "PagerDuty key update failed",
+                                  );
+                              }}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
+                            />
+                          </label>
+                          <label className="mt-2 block text-[10px] text-zinc-600">
+                            Runbook
+                            <input
+                              key={`${r.id}-rb-${r.runbookUrl ?? ""}`}
+                              disabled={busy}
+                              defaultValue={r.runbookUrl ?? ""}
+                              placeholder="https://…"
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                const prev = r.runbookUrl ?? "";
+                                if (v !== prev)
+                                  void patchRule(
+                                    r.id,
+                                    { runbook_url: v },
+                                    "Runbook update failed",
+                                  );
+                              }}
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600"
+                            />
+                          </label>
+                        </>
+                      )}
                     </div>
                     <button
                       type="button"
-                      disabled={busy}
+                      disabled={busy || isViewer}
                       onClick={() => void removeRule(r.id)}
                       className="pulse-transition shrink-0 rounded-md border border-[var(--pulse-border-default)] bg-white/[0.02] px-2 py-1 text-[10px] font-medium text-zinc-400 hover:border-[var(--pulse-status-danger-border)] hover:bg-[var(--pulse-status-danger-bg)] hover:text-[var(--pulse-status-danger-fg)] disabled:opacity-50"
                     >
