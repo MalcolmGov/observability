@@ -660,19 +660,40 @@ export function DashboardV2View() {
         </div>
       </header>
 
-      {/* ── Global no-data nudge ── */}
+      {/* ── First-run welcome banner ── */}
       {!loading && (!data || data.services.length === 0) && !error && (
-        <div className="flex items-center gap-4 rounded-2xl border border-dashed px-5 py-4" style={{ borderColor: 'rgba(6,214,199,0.22)', background: 'rgba(6,214,199,0.04)' }}>
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'rgba(6,214,199,0.12)' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06d6c7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+        <div className="relative overflow-hidden rounded-2xl px-6 py-5"
+          style={{ background: "linear-gradient(135deg, rgba(6,214,199,0.07) 0%, rgba(56,189,248,0.04) 100%)", border: "1px solid rgba(6,214,199,0.18)" }}>
+          <div className="pointer-events-none absolute -right-12 -top-10 size-48 rounded-full opacity-10"
+            style={{ background: "radial-gradient(circle, #06d6c7, transparent 70%)" }} />
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl text-xl"
+              style={{ background: "rgba(6,214,199,0.12)", border: "1px solid rgba(6,214,199,0.25)" }}>
+              👋
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white">Welcome to Pulse! No telemetry connected yet.</p>
+              <p className="text-[11px] text-zinc-500">
+                Connect a data source, load the demo, or follow the setup guide to get started in minutes.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Link href="/getting-started"
+                className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition"
+                style={{ background: "rgba(6,214,199,0.12)", color: "#06d6c7", border: "1px solid rgba(6,214,199,0.3)" }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(6,214,199,0.2)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(6,214,199,0.12)"; }}>
+                ✦ Getting Started →
+              </Link>
+              <button type="button" onClick={() => void runDemoSeed()} disabled={loading}
+                className="rounded-xl px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
+                style={{ background: "rgba(255,255,255,0.05)", color: "#a1a1aa", border: "1px solid rgba(255,255,255,0.1)" }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.09)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; }}>
+                Load Demo Data
+              </button>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-zinc-100">No telemetry ingested yet</p>
-            <p className="text-[11px] text-zinc-500">Load sample data to see golden signals, latency charts, and service health populate in real time.</p>
-          </div>
-          <button type="button" onClick={() => void runDemoSeed()} disabled={loading} className="shrink-0 pulse-btn-primary disabled:opacity-50">
-            Load demo data
-          </button>
         </div>
       )}
 

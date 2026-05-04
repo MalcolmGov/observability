@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 type RuleDbRow = {
   id: number;
   name: string;
+  rule_type: string | null;
   metric_name: string;
   service: string;
   comparator: string;
@@ -29,6 +30,10 @@ type RuleDbRow = {
   market_scope: string | null;
   environment: string | null;
   severity: string | null;
+  log_level: string | null;
+  log_pattern: string | null;
+  slo_burn_window: string | null;
+  slo_burn_threshold: number | null;
 };
 
 function parseSeverity(s: string | null): Severity {
@@ -134,9 +139,10 @@ async function logEvalSnapshot(
 export async function GET(req: Request) {
   const tenantId = getTelemetryTenantIdFromRequest(req);
   const rules = await queryAll<RuleDbRow>(
-    `SELECT id, name, metric_name, service, comparator, threshold, window_minutes,
+    `SELECT id, name, rule_type, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment, severity
+            product, market_scope, environment, severity, log_level, log_pattern,
+            slo_burn_window, slo_burn_threshold
      FROM alert_rules WHERE enabled = 1`,
     [],
   );
@@ -187,7 +193,61 @@ export async function GET(req: Request) {
     let observedAvg: number | null = null;
     let breachedMarkets: string[] = [];
 
-    if (scopedMarkets.length >= 2) {
+    const ruleType = (r.rule_type ?? "metric").trim();
+
+    if (ruleType === "log_count") {
+      // ── Log pattern evaluation ──────────────────────────────────
+      const level  = r.log_level?.trim()  || null;
+      const pattern = r.log_pattern?.trim() || null;
+      let sql = `SELECT COUNT(*) AS c FROM log_entries
+        WHERE tenant_id = ? AND service = ? AND ts >= ? AND environment = ?`;
+      const params: unknown[] = [tenantId, r.service, since, env];
+      if (level && level !== "any") { sql += ` AND level = ?`; params.push(level); }
+      if (pattern)                   { sql += ` AND message LIKE ?`; params.push(`%${pattern}%`); }
+      if (prod)                      { sql += ` AND product = ?`; params.push(prod); }
+      const row = await queryGet<{ c: number }>(sql, params);
+      observedAvg = row ? Number(row.c) : 0;
+      const fires = observedAvg != null && checkBreach(observedAvg);
+      breachedMarkets = fires ? ["ALL"] : [];
+    } else if (ruleType === "slo_burn") {
+      // ── SLO burn-rate evaluation ────────────────────────────────
+      // Resolve window duration from slo_burn_window field.
+      const burnWindowMap: Record<string, number> = {
+        "1h":  60 * 60 * 1000,
+        "6h":  6 * 60 * 60 * 1000,
+        "24h": 24 * 60 * 60 * 1000,
+      };
+      const burnWindowId = (r.slo_burn_window?.trim() ?? "1h") as "1h" | "6h" | "24h";
+      const burnWindowMs = burnWindowMap[burnWindowId] ?? burnWindowMap["1h"];
+      const burnStart = now - burnWindowMs;
+      const burnThreshold = Number(r.slo_burn_threshold ?? 2.0);
+
+      // Fetch SLO target for this service.
+      const sloTarget = await queryGet<{ targetSuccess: number }>(
+        `SELECT target_success AS targetSuccess FROM slo_targets
+         WHERE service = ? LIMIT 1`,
+        [r.service],
+      );
+      const targetSuccess = sloTarget ? Number(sloTarget.targetSuccess) : 0.999;
+      const budgetBadRate = Math.max(1e-9, 1 - targetSuccess);
+
+      // Count spans + errors in the burn window.
+      const burnRow = await queryGet<{ spanCount: number; errorCount: number }>(
+        `SELECT COUNT(*) AS spanCount,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errorCount
+         FROM trace_spans
+         WHERE tenant_id = ? AND service = ? AND environment = ? AND start_ts >= ?`,
+        [tenantId, r.service, env, burnStart],
+      );
+      const spanCount  = Number(burnRow?.spanCount ?? 0);
+      const errorCount = Number(burnRow?.errorCount ?? 0);
+      const errorRate  = spanCount > 0 ? errorCount / spanCount : 0;
+      const burnMultiplier = spanCount > 0 ? errorRate / budgetBadRate : null;
+
+      observedAvg = burnMultiplier;  // store burn rate as the "observed" value
+      const fires = burnMultiplier != null && burnMultiplier > burnThreshold;
+      breachedMarkets = fires ? ["ALL"] : [];
+    } else if (scopedMarkets.length >= 2) {
       // Multi-market scope — per-market breakdown so the resolver can route to
       // the specific markets that breached.
       const params: unknown[] = [

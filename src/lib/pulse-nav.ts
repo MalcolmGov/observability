@@ -8,6 +8,12 @@ export type PulseNavItem = {
 /** Single source for sidebar + command palette (⌘K). */
 export const PULSE_PRIMARY_NAV: readonly PulseNavItem[] = [
   {
+    href: "/getting-started",
+    label: "Get Started",
+    desc: "Setup & feature tour",
+    keywords: "onboarding setup welcome tour wizard",
+  },
+  {
     href: "/briefing",
     label: "Briefing",
     desc: "Executive storyline",
@@ -66,6 +72,12 @@ export const PULSE_PRIMARY_NAV: readonly PulseNavItem[] = [
     label: "Alerts",
     desc: "Detection rules",
     keywords: "monitoring slo silence",
+  },
+  {
+    href: "/incidents",
+    label: "Incidents",
+    desc: "Command centre",
+    keywords: "war room outage on-call triage",
   },
   {
     href: "/integrations",

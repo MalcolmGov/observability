@@ -20,6 +20,8 @@ import {
   IconCatalog,
   IconDashboard,
   IconExplore,
+  IconGettingStarted,
+  IconIncidents,
   IconIntegrations,
   IconLogs,
   IconMap,
@@ -51,26 +53,45 @@ function SystemHealthBadge() {
       ? "bg-amber-400"
       : "bg-emerald-400";
   const chipStyle = isCrit
-    ? { border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5' }
+    ? { border: "1px solid rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.08)", color: "#fca5a5" }
     : isDeg
-      ? { border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.08)', color: '#fcd34d' }
-      : { border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.06)', color: '#6ee7b7' };
+      ? { border: "1px solid rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.08)", color: "#fcd34d" }
+      : { border: "1px solid rgba(52,211,153,0.25)", background: "rgba(52,211,153,0.06)", color: "#6ee7b7" };
+
+  const inner = (
+    <>
+      <span className="relative flex size-1.5">
+        <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${dotClass} ${isCrit || isDeg ? "animate-ping" : ""}`} />
+        <span className={`relative inline-flex size-1.5 rounded-full ${dotClass}`} />
+      </span>
+      {isOk ? "All systems operational" : label}
+    </>
+  );
+
+  if (!isOk) {
+    return (
+      <Link href="/incidents"
+        className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition lg:flex hover:brightness-125"
+        style={chipStyle}
+        title={`${h.healthy} healthy · ${h.degraded} degraded · ${h.critical} critical — click to open Incident Command`}>
+        {inner}
+      </Link>
+    );
+  }
+
   return (
     <span
       className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium lg:flex"
       style={chipStyle}
-      title={`${h.healthy} healthy · ${h.degraded} degraded · ${h.critical} critical`}
-    >
-      <span className="relative flex size-1.5">
-        <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${dotClass} ${isCrit || isDeg ? 'animate-ping' : ''}`} />
-        <span className={`relative inline-flex size-1.5 rounded-full ${dotClass}`} />
-      </span>
-      {isOk ? 'All systems operational' : label}
+      title={`${h.healthy} healthy · ${h.degraded} degraded · ${h.critical} critical`}>
+      {inner}
     </span>
   );
 }
 
+
 const NAV_ICONS = [
+  IconGettingStarted,
   IconBriefing,
   IconDashboard,
   IconServices,
@@ -81,6 +102,7 @@ const NAV_ICONS = [
   IconMap,
   IconTraces,
   IconAlerts,
+  IconIncidents,
   IconIntegrations,
 ] as const;
 
@@ -145,8 +167,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [timeStr, setTimeStr] = useState("");
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
+  // Close drawer on route change
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
   useCommandPaletteShortcut(setPaletteOpen);
   useKeyboardShortcutsShortcut(setShortcutsOpen);
 
@@ -238,7 +263,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ──────────── MAIN COLUMN ──────────── */}
       <div className="flex min-h-full min-w-0 flex-1 flex-col">
         {/* Mobile header */}
-        <header className="sticky top-0 z-10 flex items-center gap-2 border-b bg-[#04080f]/90 px-3 py-3 backdrop-blur-xl md:hidden" style={{ borderColor: 'rgba(56,189,248,0.07)' }}>
+        <header className="sticky top-0 z-30 flex items-center gap-2 border-b bg-[#04080f]/95 px-3 py-3 backdrop-blur-xl md:hidden" style={{ borderColor: 'rgba(56,189,248,0.07)' }}>
+          {/* Hamburger */}
+          <button type="button" onClick={() => setDrawerOpen(true)}
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-zinc-300"
+            aria-label="Open navigation menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="size-5">
+              <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
           <Link href="/" className="flex shrink-0 items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-xl ring-1" style={{ background: 'linear-gradient(135deg,rgba(6,214,199,0.35),rgba(56,189,248,0.28),rgba(59,130,246,0.22))', borderColor: 'rgba(6,214,199,0.22)' }}>
               <PulseLogo size={18} />
@@ -246,38 +279,72 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="text-sm font-bold tracking-tight" style={{ letterSpacing: "-0.03em", color: '#06d6c7' }}>Pulse</span>
           </Link>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setPaletteOpen(true)}
+            <button type="button" onClick={() => setPaletteOpen(true)}
               className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-[10px] font-medium text-zinc-300"
-              aria-label="Open command palette"
-            >
-              ⌘K
-            </button>
-            <div className="flex max-w-[min(520px,70vw)] gap-1 overflow-x-auto pb-1 pulse-scroll">
-              {nav.map((item) => {
-                const active = isNavActive(pathname, item.href);
-                const Icon = item.Icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={item.label}
-                    aria-current={active ? "page" : undefined}
-                    className={`flex size-9 shrink-0 items-center justify-center rounded-xl transition ${
-                      active
-                      ? "bg-gradient-to-br from-cyan-500/25 to-sky-500/12 text-cyan-300 ring-1 ring-cyan-400/20"
-                      : "bg-white/[0.05] text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
-                    }`}
-                  >
-                    <Icon className="size-5" aria-hidden />
-                    <span className="sr-only">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
+              aria-label="Open command palette">⌘K</button>
+            <button type="button" onClick={() => setAiOpen(true)}
+              className="flex size-9 items-center justify-center rounded-xl border text-sm"
+              style={{ background: "rgba(6,214,199,0.08)", border: "1px solid rgba(6,214,199,0.22)" }}
+              title="Pulse AI">✨</button>
           </div>
         </header>
+
+        {/* Mobile nav drawer */}
+        {drawerOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setDrawerOpen(false)} aria-hidden />
+            {/* Drawer panel */}
+            <nav className="absolute left-0 top-0 flex h-full w-72 flex-col overflow-y-auto border-r"
+              style={{ background: "rgba(4,8,15,0.98)", borderColor: "rgba(6,214,199,0.15)" }}
+              aria-label="Mobile navigation">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b px-4 py-4"
+                style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+                <Link href="/" className="flex items-center gap-2">
+                  <div className="flex size-8 items-center justify-center rounded-xl ring-1"
+                    style={{ background: 'linear-gradient(135deg,rgba(6,214,199,0.35),rgba(56,189,248,0.28))', borderColor: 'rgba(6,214,199,0.22)' }}>
+                    <PulseLogo size={18} />
+                  </div>
+                  <span className="text-sm font-bold" style={{ color: '#06d6c7', letterSpacing: '-0.03em' }}>Pulse</span>
+                </Link>
+                <button type="button" onClick={() => setDrawerOpen(false)}
+                  className="flex size-8 items-center justify-center rounded-xl text-zinc-500 hover:text-zinc-200"
+                  aria-label="Close navigation">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="size-5">
+                    <path strokeLinecap="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Nav items */}
+              <div className="flex flex-1 flex-col gap-1 px-3 py-4">
+                {nav.map((item) => {
+                  const active = isNavActive(pathname, item.href);
+                  const Icon = item.Icon;
+                  return (
+                    <Link key={item.href} href={item.href}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${
+                        active ? "text-cyan-300" : "text-zinc-400 hover:text-zinc-100"
+                      }`}
+                      style={active ? { background: "rgba(6,214,199,0.1)", border: "1px solid rgba(6,214,199,0.2)" } : {}}
+                      aria-current={active ? "page" : undefined}>
+                      <Icon className="size-5 shrink-0" aria-hidden />
+                      <div className="min-w-0">
+                        <div>{item.label}</div>
+                        <div className="text-[11px] text-zinc-600">{item.desc}</div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+              {/* Footer */}
+              <div className="border-t px-4 py-4" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+                <div className="text-[11px] text-zinc-600">Pulse Observability · Local Dev</div>
+              </div>
+            </nav>
+          </div>
+        )}
 
         {/* ── Desktop topbar ── */}
         <header

@@ -15,6 +15,7 @@ type RuleDbRow = {
   id: number;
   name: string;
   enabled: number;
+  rule_type: string | null;
   metric_name: string;
   service: string;
   comparator: string;
@@ -28,6 +29,10 @@ type RuleDbRow = {
   market_scope: string | null;
   environment: string | null;
   severity: string | null;
+  log_level: string | null;
+  log_pattern: string | null;
+  slo_burn_window: string | null;
+  slo_burn_threshold: number | null;
 };
 
 function mapRule(r: RuleDbRow) {
@@ -35,6 +40,7 @@ function mapRule(r: RuleDbRow) {
     id: r.id,
     name: r.name,
     enabled: Boolean(r.enabled),
+    ruleType: (r.rule_type ?? "metric") as "metric" | "log_count" | "slo_burn",
     metricName: r.metric_name,
     service: r.service,
     comparator: r.comparator,
@@ -48,20 +54,23 @@ function mapRule(r: RuleDbRow) {
     marketScope: r.market_scope ?? null,
     environment: r.environment ?? "prod",
     severity: (r.severity ?? "warning") as "info" | "warning" | "critical",
+    logLevel: r.log_level ?? null,
+    logPattern: r.log_pattern ?? null,
+    sloBurnWindow: (r.slo_burn_window ?? "1h") as "1h" | "6h" | "24h",
+    sloBurnThreshold: Number(r.slo_burn_threshold ?? 2.0),
   };
 }
 
 export async function GET() {
   const rows = await queryAll<RuleDbRow>(
-    `SELECT id, name, enabled, metric_name, service, comparator, threshold, window_minutes,
+    `SELECT id, name, enabled, rule_type, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment, severity
+            product, market_scope, environment, severity, log_level, log_pattern,
+            slo_burn_window, slo_burn_threshold
      FROM alert_rules ORDER BY id ASC`,
     [],
   );
-  return NextResponse.json({
-    rules: rows.map(mapRule),
-  });
+  return NextResponse.json({ rules: rows.map(mapRule) });
 }
 
 const urlOrEmpty = z.union([z.string().url(), z.literal("")]);
@@ -69,7 +78,8 @@ const urlOrEmpty = z.union([z.string().url(), z.literal("")]);
 const postSchema = z.object({
   name: z.string().min(1),
   enabled: z.boolean().optional(),
-  metric_name: z.string().min(1),
+  rule_type: z.enum(["metric", "log_count", "slo_burn"]).optional(),
+  metric_name: z.string().optional(),
   service: z.string().min(1),
   comparator: z.enum(["gt", "lt"]),
   threshold: z.number().finite(),
@@ -79,11 +89,13 @@ const postSchema = z.object({
   slack_webhook_url: urlOrEmpty.optional(),
   pagerduty_routing_key: z.union([z.string().min(8).max(64), z.literal("")]).optional(),
   product: z.string().min(1).max(64).optional().nullable(),
-  market_scope: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional(),
+  market_scope: z.union([z.string(), z.array(z.string()), z.null()]).optional(),
   environment: z.string().min(1).max(64).optional(),
   severity: z.enum(["info", "warning", "critical"]).optional(),
+  log_level: z.enum(["error", "warn", "info", "any"]).optional().nullable(),
+  log_pattern: z.string().max(200).optional().nullable(),
+  slo_burn_window: z.enum(["1h", "6h", "24h"]).optional(),
+  slo_burn_threshold: z.number().positive().max(100).optional(),
 });
 
 export async function POST(req: Request) {
@@ -113,87 +125,46 @@ export async function POST(req: Request) {
   }
 
   const p = parsed.data;
-  const webhook =
-    p.webhook_url && p.webhook_url.length > 0 ? p.webhook_url : null;
-  const runbook =
-    p.runbook_url && p.runbook_url.length > 0 ? p.runbook_url : null;
-  const slack =
-    p.slack_webhook_url && p.slack_webhook_url.length > 0
-      ? p.slack_webhook_url
-      : null;
-  const pd =
-    p.pagerduty_routing_key && p.pagerduty_routing_key.length > 0
-      ? p.pagerduty_routing_key
-      : null;
-  const product = p.product?.trim() ? p.product.trim() : null;
-  const environment = p.environment?.trim() ?? "prod";
-  const severity = p.severity ?? "warning";
+  const ruleType      = p.rule_type ?? "metric";
+  const metricName    = p.metric_name?.trim() || (ruleType === "log_count" ? "_log_count" : ruleType === "slo_burn" ? "_slo_burn" : "");
+  const webhook       = p.webhook_url && p.webhook_url.length > 0 ? p.webhook_url : null;
+  const runbook       = p.runbook_url && p.runbook_url.length > 0 ? p.runbook_url : null;
+  const slack         = p.slack_webhook_url && p.slack_webhook_url.length > 0 ? p.slack_webhook_url : null;
+  const pd            = p.pagerduty_routing_key && p.pagerduty_routing_key.length > 0 ? p.pagerduty_routing_key : null;
+  const product       = p.product?.trim() ? p.product.trim() : null;
+  const environment   = p.environment?.trim() ?? "prod";
+  const severity      = p.severity ?? "warning";
+  const logLevel      = p.log_level ?? null;
+  const logPattern    = p.log_pattern?.trim() || null;
+  const sloBurnWindow = p.slo_burn_window ?? "1h";
+  const sloBurnThreshold = p.slo_burn_threshold ?? 2.0;
 
   let id: number;
   if (isPostgres()) {
     const row = await queryGet<{ id: number }>(
-      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment, severity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-      [
-        p.name,
-        p.enabled === false ? 0 : 1,
-        p.metric_name,
-        p.service,
-        p.comparator,
-        p.threshold,
-        p.window_minutes ?? 5,
-        webhook,
-        runbook,
-        slack,
-        pd,
-        product,
-        marketScopeCanonical,
-        environment,
-        severity,
-      ],
+      `INSERT INTO alert_rules (name, enabled, rule_type, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment, severity, log_level, log_pattern, slo_burn_window, slo_burn_threshold) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      [p.name, p.enabled === false ? 0 : 1, ruleType, metricName, p.service, p.comparator, p.threshold, p.window_minutes ?? 5, webhook, runbook, slack, pd, product, marketScopeCanonical, environment, severity, logLevel, logPattern, sloBurnWindow, sloBurnThreshold],
     );
     id = Number(row?.id);
   } else {
     await queryRun(
-      `INSERT INTO alert_rules (name, enabled, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment, severity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        p.name,
-        p.enabled === false ? 0 : 1,
-        p.metric_name,
-        p.service,
-        p.comparator,
-        p.threshold,
-        p.window_minutes ?? 5,
-        webhook,
-        runbook,
-        slack,
-        pd,
-        product,
-        marketScopeCanonical,
-        environment,
-        severity,
-      ],
+      `INSERT INTO alert_rules (name, enabled, rule_type, metric_name, service, comparator, threshold, window_minutes, webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key, product, market_scope, environment, severity, log_level, log_pattern, slo_burn_window, slo_burn_threshold) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [p.name, p.enabled === false ? 0 : 1, ruleType, metricName, p.service, p.comparator, p.threshold, p.window_minutes ?? 5, webhook, runbook, slack, pd, product, marketScopeCanonical, environment, severity, logLevel, logPattern, sloBurnWindow, sloBurnThreshold],
     );
-    const lid = await queryGet<{ id: number }>(
-      `SELECT last_insert_rowid() AS id`,
-      [],
-    );
+    const lid = await queryGet<{ id: number }>(`SELECT last_insert_rowid() AS id`, []);
     id = Number(lid?.id);
   }
 
   const row = await queryGet<RuleDbRow>(
-    `SELECT id, name, enabled, metric_name, service, comparator, threshold, window_minutes,
+    `SELECT id, name, enabled, rule_type, metric_name, service, comparator, threshold, window_minutes,
             webhook_url, runbook_url, slack_webhook_url, pagerduty_routing_key,
-            product, market_scope, environment, severity
+            product, market_scope, environment, severity, log_level, log_pattern,
+            slo_burn_window, slo_burn_threshold
      FROM alert_rules WHERE id = ?`,
     [id],
   );
 
-  return NextResponse.json(
-    {
-      rule: row ? mapRule(row) : null,
-    },
-    { status: 201 },
-  );
+  return NextResponse.json({ rule: row ? mapRule(row) : null }, { status: 201 });
 }
 
 export async function DELETE(req: Request) {

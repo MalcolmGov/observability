@@ -334,6 +334,33 @@ function migrateCatalogStripUnknownMarkets(sqlite: InstanceType<typeof Database>
   }
 }
 
+/** Adds log-pattern alerting columns — idempotent. */
+function migrateLogPatternAlertCols(sqlite: InstanceType<typeof Database>) {
+  const cols: [string, string][] = [
+    ["rule_type",    "TEXT NOT NULL DEFAULT 'metric'"],
+    ["log_level",    "TEXT"],
+    ["log_pattern",  "TEXT"],
+  ];
+  for (const [col, def] of cols) {
+    try {
+      sqlite.exec(`ALTER TABLE alert_rules ADD COLUMN ${col} ${def};`);
+    } catch { /* exists */ }
+  }
+}
+
+/** Adds SLO burn-rate alerting columns — idempotent. */
+function migrateSloBurnAlertCols(sqlite: InstanceType<typeof Database>) {
+  const cols: [string, string][] = [
+    ["slo_burn_window",    "TEXT NOT NULL DEFAULT '1h'"],
+    ["slo_burn_threshold", "REAL NOT NULL DEFAULT 2.0"],
+  ];
+  for (const [col, def] of cols) {
+    try {
+      sqlite.exec(`ALTER TABLE alert_rules ADD COLUMN ${col} ${def};`);
+    } catch { /* exists */ }
+  }
+}
+
 function initSqlite() {
   fs.mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(dbPath);
@@ -497,6 +524,8 @@ CREATE INDEX IF NOT EXISTS alert_notification_log_dedupe_idx ON alert_notificati
   migrateServiceCatalog(sqlite);
   migrateCatalogStripUnknownMarkets(sqlite);
   migrateAlertRoutesAndSeverity(sqlite);
+  migrateLogPatternAlertCols(sqlite);
+  migrateSloBurnAlertCols(sqlite);
 
   return sqlite;
 }

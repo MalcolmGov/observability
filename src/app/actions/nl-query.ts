@@ -5,8 +5,6 @@ import {
   type PlanNlQueryResult,
 } from "@/lib/nl-query-handlers";
 
-export type { PlanNlQueryResult };
-
 export async function planNlQueryAction(
   prompt: string,
   pageHint?: "logs" | "metrics" | "traces",

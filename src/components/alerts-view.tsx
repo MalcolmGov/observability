@@ -1,7 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Rule = {
   id: number;
@@ -50,9 +50,25 @@ type HistoryEntry = {
   silenced: boolean;
 };
 
+type Incident = {
+  ruleId: number;
+  ruleName: string;
+  service: string;
+  severity: "info" | "warning" | "critical";
+  metricName: string | null;
+  comparator: string | null;
+  threshold: number | null;
+  observedAvg: number | null;
+  marketScope: string | null;
+  environment: string;
+  runbookUrl: string | null;
+  evaluatedAtMs: number;
+};
+
 export function AlertsView() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [evalRows, setEvalRows] = useState<EvalRow[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [firingCount, setFiringCount] = useState(0);
   const [notificationsSent, setNotificationsSent] = useState(0);
   const [skippedDedupe, setSkippedDedupe] = useState(0);
@@ -62,6 +78,7 @@ export function AlertsView() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const incidentTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [silenceRuleId, setSilenceRuleId] = useState<string>("");
   const [silenceDurationMins, setSilenceDurationMins] = useState("60");
@@ -69,6 +86,7 @@ export function AlertsView() {
 
   const [form, setForm] = useState({
     name: "",
+    rule_type: "metric" as "metric" | "log_count" | "slo_burn",
     metric_name: "http.server.request_duration_ms",
     service: "checkout-api",
     comparator: "gt" as "gt" | "lt",
@@ -78,6 +96,10 @@ export function AlertsView() {
     slack_webhook_url: "",
     pagerduty_routing_key: "",
     runbook_url: "",
+    log_level: "error" as "error" | "warn" | "info" | "any",
+    log_pattern: "",
+    slo_burn_window: "1h" as "1h" | "6h" | "24h",
+    slo_burn_threshold: "2.0",
   });
 
   const loadSilences = useCallback(async () => {
@@ -126,6 +148,13 @@ export function AlertsView() {
     }
   }, []);
 
+  const loadIncidents = useCallback(async () => {
+    const res = await fetch("/api/v1/alerts/notifications?windowMs=86400000&limit=50");
+    if (!res.ok) return;
+    const data = (await res.json()) as { notifications: Incident[] };
+    setIncidents(data.notifications);
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -133,49 +162,57 @@ export function AlertsView() {
         await loadSilences();
         await loadHistory();
         await evaluate();
+        await loadIncidents();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed");
       }
     })();
-  }, [evaluate, loadHistory, loadRules, loadSilences]);
+    // Poll active incidents every 30s
+    incidentTimerRef.current = setInterval(() => { void loadIncidents(); }, 30_000);
+    return () => { if (incidentTimerRef.current) clearInterval(incidentTimerRef.current); };
+  }, [evaluate, loadHistory, loadIncidents, loadRules, loadSilences]);
 
   async function createRule(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
+      const body: Record<string, unknown> = {
+        name: form.name || `Rule ${new Date().toLocaleTimeString()}`,
+        rule_type: form.rule_type,
+        service: form.service,
+        comparator: form.comparator,
+        threshold: Number(form.threshold),
+        window_minutes: Number(form.window_minutes),
+        webhook_url: form.webhook_url.trim() || "",
+        slack_webhook_url: form.slack_webhook_url.trim() || "",
+        pagerduty_routing_key: form.pagerduty_routing_key.trim() || "",
+        runbook_url: form.runbook_url.trim() || "",
+      };
+      if (form.rule_type === "log_count") {
+        body.log_level = form.log_level;
+        body.log_pattern = form.log_pattern.trim() || null;
+      } else if (form.rule_type === "slo_burn") {
+        body.slo_burn_window = form.slo_burn_window;
+        body.slo_burn_threshold = Number(form.slo_burn_threshold);
+      } else {
+        body.metric_name = form.metric_name;
+      }
       const res = await fetch("/api/v1/alerts/rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name || `Rule ${new Date().toLocaleTimeString()}`,
-          metric_name: form.metric_name,
-          service: form.service,
-          comparator: form.comparator,
-          threshold: Number(form.threshold),
-          window_minutes: Number(form.window_minutes),
-          webhook_url: form.webhook_url.trim() || "",
-          slack_webhook_url: form.slack_webhook_url.trim() || "",
-          pagerduty_routing_key: form.pagerduty_routing_key.trim() || "",
-          runbook_url: form.runbook_url.trim() || "",
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error((body as { error?: string }).error ?? "Create failed");
+        const bd = await res.json().catch(() => ({}));
+        throw new Error((bd as { error?: string }).error ?? "Create failed");
       }
-      setForm((f) => ({
-        ...f,
-        name: "",
-        webhook_url: "",
-        slack_webhook_url: "",
-        pagerduty_routing_key: "",
-        runbook_url: "",
-      }));
+      setForm((f) => ({ ...f, name: "", webhook_url: "", slack_webhook_url: "", pagerduty_routing_key: "", runbook_url: "", log_pattern: "" }));
       await loadRules();
       await evaluate();
       await loadHistory();
     } catch (err) {
+      setError(err instanceof Error ? err.message : "Create failed");
     } finally {
       setBusy(false);
     }
@@ -380,106 +417,358 @@ export function AlertsView() {
         </div>
       </div>
 
+      {/* ── WAR ROOM ─────────────────────────────────────────── */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-sm font-semibold text-zinc-100">Active Incidents</h2>
+            {incidents.length > 0 && (
+              <span className="flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold"
+                style={{ background: "rgba(248,113,113,0.15)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                <span className="relative flex size-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-red-400" />
+                </span>
+                {incidents.length} firing
+              </span>
+            )}
+          </div>
+          <button type="button" onClick={() => void loadIncidents()}
+            className="text-[11px] text-zinc-600 transition hover:text-zinc-300">
+            ↻ Refresh
+          </button>
+        </div>
+
+        {incidents.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4">
+            <span className="text-xl">✅</span>
+            <div>
+              <div className="text-sm font-semibold text-emerald-300">All clear — no active incidents</div>
+              <div className="mt-0.5 text-[11px] text-zinc-500">No alert rules have been breaching thresholds in the last 24 hours.</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {incidents.map((inc) => {
+              const ageMs = Date.now() - inc.evaluatedAtMs;
+              const ageMins = Math.floor(ageMs / 60000);
+              const ageStr = ageMins < 60 ? `${ageMins}m ago` : `${Math.floor(ageMins / 60)}h ${ageMins % 60}m ago`;
+              const sevColor = inc.severity === "critical"
+                ? { bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.25)", badge: "#f87171", badgeBg: "rgba(248,113,113,0.15)" }
+                : inc.severity === "warning"
+                  ? { bg: "rgba(251,191,36,0.06)", border: "rgba(251,191,36,0.2)", badge: "#fbbf24", badgeBg: "rgba(251,191,36,0.12)" }
+                  : { bg: "rgba(56,189,248,0.06)", border: "rgba(56,189,248,0.18)", badge: "#38bdf8", badgeBg: "rgba(56,189,248,0.1)" };
+              const metricStr = inc.metricName
+                ? `${inc.metricName} ${inc.comparator === "gt" ? ">" : "<"} ${inc.threshold}`
+                : null;
+              return (
+                <div key={inc.ruleId} className="rounded-2xl p-4"
+                  style={{ background: sevColor.bg, border: `1px solid ${sevColor.border}` }}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    {/* Left: info */}
+                    <div className="flex items-start gap-3">
+                      {/* Severity icon */}
+                      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl text-base"
+                        style={{ background: sevColor.badgeBg, border: `1px solid ${sevColor.border}` }}>
+                        {inc.severity === "critical" ? "🔴" : inc.severity === "warning" ? "🟡" : "🔵"}
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-bold text-white">{inc.ruleName}</span>
+                          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ background: sevColor.badgeBg, color: sevColor.badge }}>
+                            {inc.severity}
+                          </span>
+                          <span className="text-[11px] text-zinc-500">{ageStr}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-zinc-400">
+                          <span>🔧 <span className="text-zinc-300">{inc.service}</span></span>
+                          {metricStr && <span>📊 <span className="font-mono text-zinc-300">{metricStr}</span></span>}
+                          {inc.observedAvg != null && (
+                            <span>Observed: <span className="font-semibold" style={{ color: sevColor.badge }}>{inc.observedAvg.toFixed(2)}</span></span>
+                          )}
+                          {inc.environment && <span className="rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">{inc.environment}</span>}
+                          {inc.marketScope && <span className="rounded bg-white/[0.05] px-1.5 py-0.5 text-[10px] text-zinc-500">{inc.marketScope}</span>}
+                        </div>
+                        <div className="mt-2 text-[11px] text-zinc-600">
+                          Detected: {format(new Date(inc.evaluatedAtMs), "dd MMM HH:mm:ss")}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Right: actions */}
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <a href={`/metrics?service=${encodeURIComponent(inc.service)}${inc.metricName ? `&metric=${encodeURIComponent(inc.metricName)}` : ""}&range=1h`}
+                        className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                        style={{ background: "rgba(6,214,199,0.1)", color: "#06d6c7", border: "1px solid rgba(6,214,199,0.25)" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(6,214,199,0.18)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(6,214,199,0.1)"; }}>
+                        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M5.5 1v4l2.5 1.5" /></svg>
+                        Investigate
+                      </a>
+                      <a href={`/logs?service=${encodeURIComponent(inc.service)}&level=error`}
+                        className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                        style={{ background: "rgba(255,255,255,0.04)", color: "#a1a1aa", border: "1px solid rgba(255,255,255,0.08)" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)"; }}>
+                        Logs
+                      </a>
+                      <a href={`/traces?service=${encodeURIComponent(inc.service)}&errorsOnly=1`}
+                        className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                        style={{ background: "rgba(255,255,255,0.04)", color: "#a1a1aa", border: "1px solid rgba(255,255,255,0.08)" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)"; }}>
+                        Traces
+                      </a>
+                      {inc.runbookUrl && (
+                        <a href={inc.runbookUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                          style={{ background: "rgba(251,191,36,0.08)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.2)" }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.15)"; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.08)"; }}>
+                          📓 Runbook
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ── NOTIFICATION CHANNELS ─────────────────────────────── */}
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-zinc-100">Notification Channels</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {/* Slack */}
+          <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="text-xl">💬</span>
+              <div>
+                <div className="text-sm font-semibold text-zinc-100">Slack</div>
+                <div className="text-[10px] text-zinc-500">Incoming webhook</div>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mb-3">
+              Alerts fire directly into any Slack channel. Set the webhook per-rule in the rule editor below.
+            </p>
+            <div className="rounded-lg px-3 py-2 font-mono text-[10px] text-zinc-400" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)" }}>
+              {`Routing: rule → slack_webhook_url`}
+            </div>
+            <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer"
+              className="mt-3 flex items-center gap-1 text-[11px] transition" style={{ color: "#06d6c7" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#5eead4"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#06d6c7"; }}>
+              Get a Slack webhook URL →
+            </a>
+          </div>
+
+          {/* PagerDuty */}
+          <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="text-xl">📟</span>
+              <div>
+                <div className="text-sm font-semibold text-zinc-100">PagerDuty</div>
+                <div className="text-[10px] text-zinc-500">Events API v2</div>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mb-3">
+              Triggers a PagerDuty incident with dedup key per rule. Set the routing key per-rule below.
+            </p>
+            <div className="rounded-lg px-3 py-2 font-mono text-[10px] text-zinc-400" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)" }}>
+              {`Routing: rule → pagerduty_routing_key`}
+            </div>
+            <a href="https://developer.pagerduty.com/docs/ZG9jOjExMDI5NTgw-events-api-v2-overview" target="_blank" rel="noopener noreferrer"
+              className="mt-3 flex items-center gap-1 text-[11px] transition" style={{ color: "#06d6c7" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#5eead4"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#06d6c7"; }}>
+              Get a PagerDuty routing key →
+            </a>
+          </div>
+
+          {/* Generic webhook */}
+          <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="text-xl">🔗</span>
+              <div>
+                <div className="text-sm font-semibold text-zinc-100">Webhook</div>
+                <div className="text-[10px] text-zinc-500">HTTP POST · JSON payload</div>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mb-3">
+              POST a structured JSON payload to any URL — works with Teams, Opsgenie, custom systems.
+            </p>
+            <div className="rounded-lg px-3 py-2 font-mono text-[10px] text-zinc-400" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.05)" }}>
+              {`event: "pulse.alert.firing"`}
+            </div>
+            <a href="/integrations"
+              className="mt-3 flex items-center gap-1 text-[11px] transition" style={{ color: "#06d6c7" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#5eead4"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#06d6c7"; }}>
+              Browse integrations →
+            </a>
+          </div>
+        </div>
+        <p className="mt-2 text-[11px] text-zinc-600">
+          ℹ️ Notifications are dispatched automatically on each evaluation. Group window deduplication prevents repeat pages within {Math.round(groupWindowMs / 60000)} minutes.
+        </p>
+      </section>
+
       <section className="grid gap-6 lg:grid-cols-2">
         <form
           onSubmit={(e) => void createRule(e)}
           className="pulse-card flex flex-col gap-3 p-5"
         >
           <h2 className="pulse-h3">New rule</h2>
+
+          {/* Rule type tabs */}
+          <div className="flex rounded-xl overflow-hidden border border-white/[0.08] text-xs font-semibold">
+            {([
+              { id: "metric",    label: "⚡ Metric",      color: "rgba(6,214,199,0.12)",   text: "#06d6c7" },
+              { id: "log_count", label: "📝 Log Pattern", color: "rgba(248,113,113,0.15)", text: "#f87171" },
+              { id: "slo_burn",  label: "🔥 SLO Burn",   color: "rgba(251,146,60,0.15)",  text: "#fb923c" },
+            ] as const).map((t) => (
+              <button key={t.id} type="button"
+                onClick={() => setForm(f => ({ ...f, rule_type: t.id }))}
+                className={`flex-1 py-2 transition ${
+                  form.rule_type === t.id ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                }`}
+                style={form.rule_type === t.id ? { background: t.color, color: t.text } : {}}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           <label className="pulse-caption block">
             Name
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.name}
-              placeholder="Checkout p95 budget"
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
+            <input className="pulse-input mt-1 w-full" value={form.name}
+              placeholder={
+                form.rule_type === "log_count" ? "High error log rate"
+                : form.rule_type === "slo_burn"  ? "Checkout SLO burn alert"
+                : "Checkout p95 budget"
+              }
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </label>
-          <label className="pulse-caption block">
-            Metric
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.metric_name}
-              onChange={(e) => setForm((f) => ({ ...f, metric_name: e.target.value }))}
-            />
-          </label>
+
+          {form.rule_type === "metric" ? (
+            <>
+              <label className="pulse-caption block">
+                Metric
+                <input className="pulse-input mt-1 w-full" value={form.metric_name}
+                  onChange={(e) => setForm((f) => ({ ...f, metric_name: e.target.value }))} />
+              </label>
+            </>
+          ) : form.rule_type === "log_count" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="pulse-caption block">
+                Log level
+                <select className="pulse-select mt-1 w-full" value={form.log_level}
+                  onChange={(e) => setForm((f) => ({ ...f, log_level: e.target.value as typeof form.log_level }))}>
+                  <option value="error">error</option>
+                  <option value="warn">warn</option>
+                  <option value="info">info</option>
+                  <option value="any">any level</option>
+                </select>
+              </label>
+              <label className="pulse-caption block">
+                Pattern <span className="text-zinc-600">(optional)</span>
+                <input className="pulse-input mt-1 w-full" value={form.log_pattern}
+                  placeholder="TIMEOUT, OOM, …"
+                  onChange={(e) => setForm((f) => ({ ...f, log_pattern: e.target.value }))} />
+              </label>
+            </div>
+          ) : (
+            /* SLO Burn fields */
+            <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.06] p-4">
+              <p className="mb-3 text-[11px] font-semibold" style={{ color: "#fb923c" }}>
+                Fires when the error rate consumes SLO budget faster than the multiplier within the chosen window.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="pulse-caption block">
+                  Burn window
+                  <select className="pulse-select mt-1 w-full" value={form.slo_burn_window}
+                    onChange={(e) => setForm((f) => ({ ...f, slo_burn_window: e.target.value as typeof form.slo_burn_window }))}>
+                    <option value="1h">1h (fast burn)</option>
+                    <option value="6h">6h (medium burn)</option>
+                    <option value="24h">24h (slow burn)</option>
+                  </select>
+                </label>
+                <label className="pulse-caption block">
+                  Burn rate multiplier
+                  <input type="number" step="0.5" min="1" className="pulse-input mt-1 w-full"
+                    value={form.slo_burn_threshold}
+                    placeholder="2.0"
+                    onChange={(e) => setForm((f) => ({ ...f, slo_burn_threshold: e.target.value }))} />
+                  <span className="text-[10px] text-zinc-600">e.g. 2.0 = 2× budget rate</span>
+                </label>
+              </div>
+            </div>
+          )}
+
           <label className="pulse-caption block">
             Service
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.service}
-              onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
-            />
+            <input className="pulse-input mt-1 w-full" value={form.service}
+              onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))} />
           </label>
-          <div className="grid grid-cols-2 gap-3">
+
+          {/* Comparator + threshold — hidden for slo_burn (uses its own threshold) */}
+          {form.rule_type !== "slo_burn" && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="pulse-caption block">
+                {form.rule_type === "log_count" ? "Count comparator" : "Comparator"}
+                <select className="pulse-select mt-1 w-full" value={form.comparator}
+                  onChange={(e) => setForm((f) => ({ ...f, comparator: e.target.value as "gt" | "lt" }))}>
+                  <option value="gt">greater than (&gt;)</option>
+                  <option value="lt">less than (&lt;)</option>
+                </select>
+              </label>
+              <label className="pulse-caption block">
+                {form.rule_type === "log_count" ? "Count threshold" : "Threshold"}
+                <input type="number" step="any" className="pulse-input mt-1 w-full" value={form.threshold}
+                  onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
+              </label>
+            </div>
+          )}
+
+          {/* Window — hidden for slo_burn (uses its own burn window) */}
+          {form.rule_type !== "slo_burn" && (
             <label className="pulse-caption block">
-              Comparator
-              <select
-                className="pulse-select mt-1 w-full"
-                value={form.comparator}
-                onChange={(e) => setForm((f) => ({ ...f, comparator: e.target.value as "gt" | "lt" }))}
-              >
-                <option value="gt">greater than (&gt;)</option>
-                <option value="lt">less than (&lt;)</option>
-              </select>
+              Window (minutes)
+              <input type="number" min={1} className="pulse-input mt-1 w-full" value={form.window_minutes}
+                onChange={(e) => setForm((f) => ({ ...f, window_minutes: e.target.value }))} />
             </label>
-            <label className="pulse-caption block">
-              Threshold
-              <input
-                type="number" step="any"
-                className="pulse-input mt-1 w-full"
-                value={form.threshold}
-                onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))}
-              />
-            </label>
-          </div>
-          <label className="pulse-caption block">
-            Window (minutes)
-            <input
-              type="number" min={1}
-              className="pulse-input mt-1 w-full"
-              value={form.window_minutes}
-              onChange={(e) => setForm((f) => ({ ...f, window_minutes: e.target.value }))}
-            />
-          </label>
+          )}
           <label className="pulse-caption block">
             Webhook URL <span className="text-zinc-600">(optional)</span>
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.webhook_url}
+            <input className="pulse-input mt-1 w-full" value={form.webhook_url}
               placeholder="https://example.com/hooks/pulse"
-              onChange={(e) => setForm((f) => ({ ...f, webhook_url: e.target.value }))}
-            />
+              onChange={(e) => setForm((f) => ({ ...f, webhook_url: e.target.value }))} />
           </label>
           <label className="pulse-caption block">
             Slack webhook <span className="text-zinc-600">(optional)</span>
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.slack_webhook_url}
+            <input className="pulse-input mt-1 w-full" value={form.slack_webhook_url}
               placeholder="https://hooks.slack.com/services/…"
-              onChange={(e) => setForm((f) => ({ ...f, slack_webhook_url: e.target.value }))}
-            />
+              onChange={(e) => setForm((f) => ({ ...f, slack_webhook_url: e.target.value }))} />
           </label>
           <label className="pulse-caption block">
             PagerDuty routing key <span className="text-zinc-600">(optional)</span>
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.pagerduty_routing_key}
+            <input className="pulse-input mt-1 w-full" value={form.pagerduty_routing_key}
               placeholder="Events API v2 integration key"
-              onChange={(e) => setForm((f) => ({ ...f, pagerduty_routing_key: e.target.value }))}
-            />
+              onChange={(e) => setForm((f) => ({ ...f, pagerduty_routing_key: e.target.value }))} />
           </label>
           <label className="pulse-caption block">
             Runbook URL <span className="text-zinc-600">(optional)</span>
-            <input
-              className="pulse-input mt-1 w-full"
-              value={form.runbook_url}
-              placeholder="https://wiki.example.com/runbooks/checkout-latency"
-              onChange={(e) => setForm((f) => ({ ...f, runbook_url: e.target.value }))}
-            />
+            <input className="pulse-input mt-1 w-full" value={form.runbook_url}
+              placeholder="https://wiki.example.com/runbooks/…"
+              onChange={(e) => setForm((f) => ({ ...f, runbook_url: e.target.value }))} />
           </label>
           <p className="pulse-caption">
-            Firing rules notify via webhook (<code className="text-zinc-500">pulse.alert.firing</code>), Slack, or PagerDuty Events v2. Dedupe window: <code className="text-zinc-500">PULSE_ALERT_GROUP_WINDOW_MS</code>.
+            {form.rule_type === "log_count"
+              ? "Fires when the matching log count exceeds the threshold within the window. Notifies via Slack, PagerDuty, or Webhook."
+              : form.rule_type === "slo_burn"
+              ? "Fires when the error burn rate exceeds the multiplier threshold. An SLO target must exist for the service (via PUT /api/v1/slo/targets)."
+              : "Firing rules notify via webhook (pulse.alert.firing), Slack, or PagerDuty Events v2."}
           </p>
           <button type="submit" disabled={busy} className="pulse-btn-primary mt-2 disabled:opacity-50">
             Save rule
