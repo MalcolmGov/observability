@@ -12,6 +12,7 @@ export function ServiceMapView() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [since, setSince] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [showBusinessImpact, setShowBusinessImpact] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -57,13 +58,24 @@ export function ServiceMapView() {
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-zinc-100 hover:bg-white/10"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-400 hover:bg-emerald-500/20 cursor-pointer transition">
+            <input 
+              type="checkbox" 
+              checked={showBusinessImpact} 
+              onChange={e => setShowBusinessImpact(e.target.checked)}
+              className="accent-emerald-500"
+            />
+            <span className="font-semibold">💰 Business Impact Overlay</span>
+          </label>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-zinc-100 hover:bg-white/10 transition"
+          >
+            Refresh
+          </button>
+        </div>
       </header>
 
       {error ? <div className="pulse-alert-error">{error}</div> : null}
@@ -77,7 +89,7 @@ export function ServiceMapView() {
           screens).
         </p>
         <div className="mt-4">
-          <ServiceMapGraph nodes={nodes} edges={edges} />
+          <ServiceMapGraph nodes={nodes} edges={edges} showBusinessImpact={showBusinessImpact} />
         </div>
       </section>
 

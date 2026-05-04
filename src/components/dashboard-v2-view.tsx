@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { traceIdFromAttributes } from "@/lib/trace-id";
+import { generateDashboardAction, ChartConfig } from "@/app/actions/dashboard-builder";
 import type { DemoSeedApiResponse } from "@/lib/demo-scenario";
 import { persistDemoSeed, readStoredDemoSeed } from "@/components/demo-launchpad";
 import {
@@ -163,6 +164,121 @@ function MiniSparkline({
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
       <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
     </svg>
+  );
+}
+
+// ── Natural Language Dashboard Builder ───────────────────────────
+function NlDashboardBuilder() {
+  const [prompt, setPrompt] = useState("");
+  const [charts, setCharts] = useState<ChartConfig[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await generateDashboardAction(prompt);
+      if (res.success) {
+        setCharts(res.charts);
+      } else {
+        setError(res.error);
+      }
+    } catch (e) {
+      setError("Failed to generate dashboard layout.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getDummyData = (metric: string) => {
+    // Generate synthetic data based on metric requested
+    const pts = [];
+    const now = Date.now();
+    for (let i = 0; i < 20; i++) {
+      let val = 100 + Math.random() * 50;
+      if (metric.includes("error")) val = Math.random() * 5;
+      if (metric.includes("cpu")) val = 40 + Math.random() * 40;
+      pts.push({ time: format(new Date(now - (20 - i) * 60000), "HH:mm"), value: val });
+    }
+    return pts;
+  };
+
+  return (
+    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 shadow-lg shadow-emerald-500/5 mb-4">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">✨</span>
+          <h2 className="text-lg font-bold text-emerald-400 tracking-tight">AI Dashboard Builder</h2>
+        </div>
+        <p className="text-xs text-zinc-400 hidden sm:block">Generate dynamic visualizations via natural language.</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex gap-3">
+        <input
+          type="text"
+          value={prompt}
+          onChange={e => setPrompt(e.target.value)}
+          placeholder="e.g. Show me the error rate for the payment service compared to active users..."
+          className="flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-zinc-200 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50"
+        />
+        <button
+          type="submit"
+          disabled={loading || !prompt.trim()}
+          className="rounded-xl bg-emerald-500/20 px-6 py-3 text-sm font-bold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50 transition"
+        >
+          {loading ? "Generating..." : "Generate 🪄"}
+        </button>
+      </form>
+
+      {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+
+      {charts.length > 0 && (
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {charts.map((c) => (
+            <div key={c.id} className="rounded-xl border border-white/10 bg-slate-950 p-4 shadow-lg">
+              <h3 className="text-sm font-semibold text-zinc-200">{c.title}</h3>
+              <p className="text-[10px] text-zinc-500 mb-4">{c.description}</p>
+              <div className="h-40 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  {c.type === "bar" ? (
+                    <BarChart data={getDummyData(c.metric)} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} vertical={false} />
+                      <XAxis dataKey="time" tick={pulseChartAxisTick} tickLine={false} axisLine={false} />
+                      <YAxis tick={pulseChartAxisTick} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={pulseChartTooltipStyle} />
+                      <Bar dataKey="value" fill="#34d399" radius={[4,4,0,0]} />
+                    </BarChart>
+                  ) : c.type === "area" ? (
+                    <AreaChart data={getDummyData(c.metric)} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} vertical={false} />
+                      <XAxis dataKey="time" tick={pulseChartAxisTick} tickLine={false} axisLine={false} />
+                      <YAxis tick={pulseChartAxisTick} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={pulseChartTooltipStyle} />
+                      <Area type="monotone" dataKey="value" stroke="#818cf8" fill="#818cf8" fillOpacity={0.2} />
+                    </AreaChart>
+                  ) : (
+                    <LineChart data={getDummyData(c.metric)} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={pulseChartGridStroke} vertical={false} />
+                      <XAxis dataKey="time" tick={pulseChartAxisTick} tickLine={false} axisLine={false} />
+                      <YAxis tick={pulseChartAxisTick} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={pulseChartTooltipStyle} />
+                      <Line type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="rounded bg-white/5 px-2 py-0.5 font-mono text-[9px] text-zinc-400">{c.service}</span>
+                <span className="text-[10px] text-zinc-600">Dynamic UI</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -701,6 +817,8 @@ export function DashboardV2View() {
       {error ? (
         <div className="pulse-alert-error">{error}</div>
       ) : null}
+
+      <NlDashboardBuilder />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((k, i) => {

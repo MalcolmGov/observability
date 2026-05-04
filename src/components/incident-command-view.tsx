@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useAuth } from "@/components/auth-provider";
 import { generateIncidentRcaAction } from "@/app/actions/incident-rca";
+import { generatePostMortemAction } from "@/app/actions/post-mortem";
 
 // ── Types ────────────────────────────────────────────────────────
 type Severity = "critical" | "warning" | "info";
@@ -179,6 +180,110 @@ function AiRcaPanel({ incident, logs }: { incident: Incident; logs: LogEntry[] }
   );
 }
 
+// ── Post-Mortem Modal ────────────────────────────────────────────
+function PostMortemModal({
+  incident,
+  logs,
+  onClose
+}: {
+  incident: Incident;
+  logs: LogEntry[];
+  onClose: () => void;
+}) {
+  const [result, setResult] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function run() {
+      setLoading(true);
+      try {
+        const res = await generatePostMortemAction(
+          {
+            ruleName: incident.ruleName,
+            service: incident.service,
+            severity: incident.severity,
+            durationMinutes: 15, // Synthetic duration for demo purposes
+            resolvedAtMs: Date.now(),
+          },
+          logs
+        );
+        if (res.success) {
+          setResult(res.markdown);
+        } else {
+          setError(res.error);
+        }
+      } catch (e: any) {
+        setError("Failed to generate post-mortem.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    run();
+  }, [incident, logs]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-6 py-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">📝</span>
+            <span className="font-semibold text-zinc-200">Incident Post-Mortem</span>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white">✕</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading && (
+            <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+              <span className="animate-spin text-3xl mb-4">⏳</span>
+              <p>Drafting comprehensive post-mortem...</p>
+              <p className="text-[11px] text-zinc-500 mt-2">Analyzing timeline and cross-referencing telemetry...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
+          {result && !loading && (
+            <div className="prose prose-invert prose-sm max-w-none">
+              <div dangerouslySetInnerHTML={{ 
+                __html: result
+                  .replace(/\\*\\*(.*?)\\*\\*/g, "<strong>$1</strong>")
+                  .replace(/### (.*?)\n/g, '<h3 className="mt-6 mb-3 text-lg font-bold text-white">$1</h3>')
+                  .replace(/# (.*?)\n/g, '<h1 className="text-2xl font-extrabold text-white mb-6">$1</h1>')
+                  .replace(/- \[ \] (.*)/g, '<li className="ml-4 list-none flex items-start gap-2"><input type="checkbox" className="mt-1" /> $1</li>')
+                  .replace(/- (.*)/g, '<li className="ml-4 list-disc">$1</li>')
+                  .replace(/1\\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+                  .replace(/2\\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+                  .replace(/3\\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+                  .replace(/4\\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+                  .replace(/5\\. (.*)/g, '<li className="ml-4 list-decimal">$1</li>')
+                  .replace(/\\n/g, "<br/>")
+              }} />
+            </div>
+          )}
+        </div>
+
+        {result && !loading && (
+          <div className="border-t border-white/5 bg-white/[0.02] px-6 py-4 flex justify-end gap-3">
+            <button className="pulse-btn-secondary px-4 py-2" onClick={() => navigator.clipboard.writeText(result)}>
+              Copy Markdown
+            </button>
+            <button className="pulse-btn-primary px-4 py-2" onClick={onClose}>
+              Save to Platform
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Incident detail panel ────────────────────────────────────────
 function IncidentDetail({
   incident,
@@ -193,6 +298,7 @@ function IncidentDetail({
   const isViewer = user?.role === "viewer";
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [silencing, setSilencing] = useState(false);
+  const [pmModalOpen, setPmModalOpen] = useState(false);
   const s = SEV[incident.severity];
   const ruleHistory = history.filter(h => h.ruleId === incident.ruleId).slice(0, 12);
   const sparkPoints = ruleHistory.filter(h => h.observedAvg != null).reverse().map(h => h.observedAvg!);
@@ -291,6 +397,13 @@ function IncidentDetail({
               {silencing ? "Silencing…" : "🔇 Silence 1h"}
             </button>
           )}
+          <button type="button" onClick={() => setPmModalOpen(true)}
+            className="rounded-xl px-3 py-1.5 text-xs font-semibold transition shadow-[0_0_15px_rgba(56,189,248,0.1)]"
+            style={{ background: "rgba(56,189,248,0.1)", color: "#38bdf8", border: "1px solid rgba(56,189,248,0.3)" }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(56,189,248,0.18)"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "rgba(56,189,248,0.1)"; }}>
+            📝 Draft Post-Mortem
+          </button>
         </div>
 
         {/* Sparkline + current value */}
@@ -346,6 +459,14 @@ function IncidentDetail({
         <AiRcaPanel incident={incident} logs={logs} />
 
       </div>
+
+      {pmModalOpen && (
+        <PostMortemModal
+          incident={incident}
+          logs={logs}
+          onClose={() => setPmModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

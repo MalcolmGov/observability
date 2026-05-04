@@ -55,9 +55,11 @@ function tierLayout(nodes: string[], edges: Edge[]) {
 export function ServiceMapGraph({
   nodes,
   edges,
+  showBusinessImpact = false,
 }: {
   nodes: string[];
   edges: Edge[];
+  showBusinessImpact?: boolean;
 }) {
   const layout = useMemo(() => tierLayout(nodes, edges), [edges, nodes]);
 
@@ -135,12 +137,28 @@ export function ServiceMapGraph({
         ))}
         {rendered.boxes.map((b) => (
           <g key={b.key} transform={`translate(${b.x},${b.y})`}>
+            {/* Business Impact Glowing Aura */}
+            {showBusinessImpact && (b.name.includes("api") || b.name.includes("checkout") || b.name.includes("payment")) && (
+              <rect
+                x={-4}
+                y={-4}
+                width={152}
+                height={50}
+                rx={10}
+                fill="none"
+                stroke="rgba(248,113,113,0.4)"
+                strokeWidth={2}
+                className="animate-pulse"
+                style={{ filter: "drop-shadow(0 0 8px rgba(248,113,113,0.5))" }}
+              />
+            )}
+
             <rect
               width={144}
-              height={28}
+              height={showBusinessImpact && (b.name.includes("api") || b.name.includes("checkout") || b.name.includes("payment")) ? 42 : 28}
               rx={8}
               fill="rgba(2,6,23,0.88)"
-              stroke="rgba(255,255,255,0.1)"
+              stroke={showBusinessImpact && (b.name.includes("api") || b.name.includes("checkout") || b.name.includes("payment")) ? "rgba(248,113,113,0.8)" : "rgba(255,255,255,0.1)"}
               strokeWidth={1}
             />
             <text
@@ -154,6 +172,27 @@ export function ServiceMapGraph({
             >
               {b.name.length > 20 ? `${b.name.slice(0, 18)}…` : b.name}
             </text>
+
+            {/* Business Impact Metric */}
+            {showBusinessImpact && (
+              <>
+                {b.name.includes("checkout") && (
+                  <text x={72} y={32} textAnchor="middle" fill="#f87171" fontSize={9} fontWeight={700} fontFamily="ui-sans-serif, system-ui">
+                    ⚠️ Revenue Risk: $14.2k/hr
+                  </text>
+                )}
+                {b.name.includes("payment") && (
+                  <text x={72} y={32} textAnchor="middle" fill="#f87171" fontSize={9} fontWeight={700} fontFamily="ui-sans-serif, system-ui">
+                    ⚠️ Stripe Failures: +42%
+                  </text>
+                )}
+                {b.name.includes("api") && !b.name.includes("checkout") && !b.name.includes("payment") && (
+                  <text x={72} y={32} textAnchor="middle" fill="#fbbf24" fontSize={9} fontWeight={700} fontFamily="ui-sans-serif, system-ui">
+                    ⚠️ Conversion Drop: -12%
+                  </text>
+                )}
+              </>
+            )}
           </g>
         ))}
       </svg>
